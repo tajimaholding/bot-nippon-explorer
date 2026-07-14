@@ -1,25 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-Bot d'accueil (onboarding) — Nippon Explorer
+NEObot v2.0 — Bot d'accueil de Nippon Explorer
 --------------------------------------------
-Ce que fait ce bot :
-  1. Quand un nouveau membre rejoint le serveur, il lui envoie un
-     questionnaire en message privé (menus cliquables).
-  2. Selon la réponse à la question "Qui vous a parlé de Nippon Explorer ?",
-     il attribue automatiquement le bon rôle (Team Fildrong, Filleul(e), etc.).
-  3. Toutes les réponses sont enregistrées dans un Google Sheet.
-  4. Les questions se modifient DANS le Google Sheet (onglet "Questions"),
-     puis on tape /recharger sur Discord. Aucune modification de code.
+Nouveautés de la v2 (« socle accueil ») :
+  • Rôle automatique à l'arrivée (Curieux) — clé Config : ROLE_ARRIVEE
+  • Le questionnaire retire ce rôle et donne le rôle final (Visiteur) — clé : ROLE_FINAL
+  • Bouton permanent « 🌸 Commencer » dans le salon d'accueil — commande : /installer-bouton
+  • Nouvelle question « aisance Discord » : les débutants sont orientés vers
+    le salon guide — clés Config : GUIDE_QUESTION, GUIDE_REPONSES, SALON_GUIDE
+  • /synchro-veterans : donne le rôle « Vétéran » à tous ceux qui ont un rôle « Vétéran lvl … »
 
 Commandes disponibles sur Discord :
-  /questionnaire  -> (re)faire le questionnaire (utile pour tester ou si MP fermés)
-  /recharger      -> recharger les questions depuis le Google Sheet (admin)
-  /export         -> recevoir toutes les réponses en fichier CSV (admin)
+  /questionnaire       -> (re)faire le questionnaire
+  /installer-bouton    -> publier le message d'accueil avec le bouton Commencer (admin)
+  /synchro-veterans    -> donner le rôle Vétéran aux détenteurs d'un rôle « Vétéran lvl » (admin)
+  /recharger           -> recharger les questions depuis Google Sheets (admin)
+  /export              -> recevoir toutes les réponses en fichier CSV (admin)
 
-Variables d'environnement à définir chez l'hébergeur (voir GUIDE) :
-  DISCORD_TOKEN            -> le jeton secret du bot Discord
-  SHEET_ID                 -> l'identifiant du Google Sheet
-  GOOGLE_CREDENTIALS_JSON  -> le contenu du fichier JSON du compte de service Google
+Variables d'environnement (inchangées) :
+  DISCORD_TOKEN, SHEET_ID, GOOGLE_CREDENTIALS_JSON
 """
 
 import asyncio
@@ -39,7 +38,6 @@ from google.oauth2.service_account import Credentials
 
 # ============================================================
 # 1. Petit serveur web : nécessaire pour l'hébergement gratuit
-#    (Render + UptimeRobot le "pingent" pour garder le bot éveillé)
 # ============================================================
 
 def demarrer_serveur_web():
@@ -50,14 +48,14 @@ def demarrer_serveur_web():
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.end_headers()
-            self.wfile.write("Le bot est en ligne.".encode("utf-8"))
+            self.wfile.write("NEObot est en ligne.".encode("utf-8"))
 
         def do_HEAD(self):
             self.send_response(200)
             self.end_headers()
 
         def log_message(self, *args):
-            pass  # silence
+            pass
 
     serveur = http.server.ThreadingHTTPServer(("0.0.0.0", port), Poignee)
     threading.Thread(target=serveur.serve_forever, daemon=True).start()
@@ -69,8 +67,8 @@ def demarrer_serveur_web():
 
 PORTEES_GOOGLE = ["https://www.googleapis.com/auth/spreadsheets"]
 
-QUESTIONS = []   # liste de dicts : {"texte", "options", "multiple", "roles"}
-CONFIG = {}      # options facultatives lues dans l'onglet "Config"
+QUESTIONS = []
+CONFIG = {}
 
 
 def ouvrir_classeur():
@@ -85,14 +83,13 @@ def charger_donnees():
     global QUESTIONS, CONFIG
     classeur = ouvrir_classeur()
 
-    # --- Onglet "Questions" ---
     lignes = classeur.worksheet("Questions").get_all_records()
     questions = []
     for ligne in lignes:
         texte = str(ligne.get("Question", "")).strip()
         options = [o.strip() for o in str(ligne.get("Options", "")).split(";") if o.strip()]
         if not texte or not options:
-            continue  # ligne vide ou incomplète : ignorée
+            continue
         multiple = str(ligne.get("Multiple", "")).strip().lower() in ("oui", "yes", "x", "1", "true", "vrai")
         roles = {}
         brut = str(ligne.get("Rôles", "") or ligne.get("Roles", "")).strip()
@@ -103,12 +100,11 @@ def charger_donnees():
                     roles[option.strip()] = role.strip()
         questions.append({
             "texte": texte[:256],
-            "options": options[:25],   # Discord limite à 25 choix par menu
+            "options": options[:25],
             "multiple": multiple,
             "roles": roles,
         })
 
-    # --- Onglet "Config" (facultatif) ---
     config = {}
     try:
         for ligne in classeur.worksheet("Config").get_all_values():
@@ -117,7 +113,6 @@ def charger_donnees():
     except gspread.WorksheetNotFound:
         pass
 
-    # --- Onglet "Réponses" : créé si absent, en-têtes mis à jour ---
     try:
         feuille_r = classeur.worksheet("Réponses")
     except gspread.WorksheetNotFound:
@@ -130,7 +125,6 @@ def charger_donnees():
 
 
 def enregistrer_reponses(utilisateur, reponses):
-    """Ajoute une ligne dans l'onglet Réponses."""
     classeur = ouvrir_classeur()
     feuille = classeur.worksheet("Réponses")
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
@@ -144,10 +138,31 @@ def lire_toutes_les_reponses():
 
 
 # ============================================================
-# 3. Le questionnaire (menus cliquables en message privé)
+# 3. Outils rôles
 # ============================================================
 
-COULEUR = 0xD90F2C  # rouge Japon
+def trouver_role(serveur: discord.Guild, nom: str):
+    nom = (nom or "").strip()
+    if not nom:
+        return None
+    return discord.utils.find(lambda r: r.name.lower() == nom.lower(), serveur.roles)
+
+
+async def obtenir_membre(serveur: discord.Guild, utilisateur):
+    membre = serveur.get_member(utilisateur.id)
+    if membre is None:
+        try:
+            membre = await serveur.fetch_member(utilisateur.id)
+        except discord.NotFound:
+            return None
+    return membre
+
+
+# ============================================================
+# 4. Le questionnaire (menus cliquables en message privé)
+# ============================================================
+
+COULEUR = 0xD90F2C
 DUREE_MAX_PAR_QUESTION = 900  # 15 minutes
 
 
@@ -179,11 +194,22 @@ class VueQuestion(discord.ui.View):
         self.add_item(SelecteurQuestion(question, proprietaire_id))
 
 
-sessions_en_cours = set()  # évite de lancer 2 questionnaires en même temps pour la même personne
+sessions_en_cours = set()
+
+
+def doit_voir_le_guide(reponses):
+    """Vrai si la réponse à la question « aisance Discord » est un déclencheur (Config)."""
+    q_cible = CONFIG.get("GUIDE_QUESTION", "").strip().lower()
+    declencheurs = [d.strip().lower() for d in CONFIG.get("GUIDE_REPONSES", "").split(";") if d.strip()]
+    if not q_cible or not declencheurs:
+        return False
+    for question, valeurs in zip(QUESTIONS, reponses):
+        if question["texte"].strip().lower() == q_cible:
+            return any(v.lower() in declencheurs for v in valeurs)
+    return False
 
 
 async def derouler_questionnaire(utilisateur: discord.User, serveur: discord.Guild):
-    """Envoie les questions une par une en MP, attribue les rôles, enregistre tout."""
     if utilisateur.id in sessions_en_cours:
         return
     if not QUESTIONS:
@@ -200,7 +226,7 @@ async def derouler_questionnaire(utilisateur: discord.User, serveur: discord.Gui
             ),
             color=COULEUR,
         )
-        await mp.send(embed=bienvenue)  # si les MP sont fermés -> discord.Forbidden
+        await mp.send(embed=bienvenue)
 
         reponses = []
         total = len(QUESTIONS)
@@ -216,10 +242,10 @@ async def derouler_questionnaire(utilisateur: discord.User, serveur: discord.Gui
             message = await mp.send(embed=embed, view=vue)
             await vue.wait()
 
-            if vue.valeurs is None:  # temps écoulé
+            if vue.valeurs is None:
                 await mp.send(
-                    "⏳ Le temps est écoulé. Tape **/questionnaire** sur le serveur "
-                    "pour recommencer quand tu veux !"
+                    "⏳ Le temps est écoulé. Reclique sur le bouton **Commencer** du salon d'accueil, "
+                    "ou tape **/questionnaire** sur le serveur pour recommencer quand tu veux !"
                 )
                 return
 
@@ -227,33 +253,39 @@ async def derouler_questionnaire(utilisateur: discord.User, serveur: discord.Gui
             embed.add_field(name="Ta réponse ✅", value=", ".join(vue.valeurs), inline=False)
             await message.edit(embed=embed, view=None)
 
-        # --- Attribution des rôles ---
         roles_donnes, roles_introuvables = await attribuer_roles(utilisateur, serveur, reponses)
 
-        # --- Enregistrement dans Google Sheets ---
         try:
             await asyncio.to_thread(enregistrer_reponses, utilisateur, reponses)
         except Exception as erreur:
             print(f"[ERREUR Google Sheets] {erreur}")
 
-        # --- Message de fin ---
         merci = discord.Embed(
             title="🎌 Merci, et bienvenue chez Nippon Explorer !",
-            description="Ton profil est enregistré. Bonne exploration !",
+            description="Ton profil est enregistré : le serveur t'est maintenant ouvert. Bonne exploration !",
             color=COULEUR,
         )
         if roles_donnes:
             merci.add_field(name="Rôles attribués", value=", ".join(roles_donnes), inline=False)
+        salon_guide = CONFIG.get("SALON_GUIDE", "").strip()
+        if doit_voir_le_guide(reponses) and salon_guide.isdigit():
+            merci.add_field(
+                name="👋 On t'accompagne !",
+                value=(
+                    f"Tu débutes sur Discord ? Pas de panique : passe d'abord par <#{salon_guide}>, "
+                    "on t'y explique le fonctionnement du serveur en quelques minutes."
+                ),
+                inline=False,
+            )
         await mp.send(embed=merci)
 
-        # --- Journal pour les admins (facultatif) ---
         await journaliser(serveur, utilisateur, reponses, roles_donnes, roles_introuvables)
     finally:
         sessions_en_cours.discard(utilisateur.id)
 
 
 async def attribuer_roles(utilisateur, serveur, reponses):
-    """Attribue les rôles correspondant aux réponses + le rôle final éventuel."""
+    """Donne les rôles liés aux réponses + ROLE_FINAL, puis retire ROLE_ARRIVEE."""
     noms_voulus = []
     for question, valeurs in zip(QUESTIONS, reponses):
         for valeur in valeurs:
@@ -265,15 +297,12 @@ async def attribuer_roles(utilisateur, serveur, reponses):
         noms_voulus.append(role_final)
 
     donnes, introuvables = [], []
-    membre = serveur.get_member(utilisateur.id)
+    membre = await obtenir_membre(serveur, utilisateur)
     if membre is None:
-        try:
-            membre = await serveur.fetch_member(utilisateur.id)
-        except discord.NotFound:
-            return donnes, noms_voulus
+        return donnes, noms_voulus
 
     for nom in noms_voulus:
-        role = discord.utils.find(lambda r: r.name.lower() == nom.lower(), serveur.roles)
+        role = trouver_role(serveur, nom)
         if role is None:
             introuvables.append(nom)
             continue
@@ -282,21 +311,26 @@ async def attribuer_roles(utilisateur, serveur, reponses):
             donnes.append(role.name)
         except discord.Forbidden:
             introuvables.append(f"{nom} (le rôle du bot est trop bas dans la liste)")
+
+    # Le membre n'est plus un simple « Curieux »
+    role_arrivee = trouver_role(serveur, CONFIG.get("ROLE_ARRIVEE", ""))
+    if role_arrivee and role_arrivee in membre.roles:
+        try:
+            await membre.remove_roles(role_arrivee, reason="Questionnaire d'accueil terminé")
+        except discord.Forbidden:
+            introuvables.append(f"{role_arrivee.name} (impossible à retirer : rôle du bot trop bas)")
+
     return donnes, introuvables
 
 
 async def journaliser(serveur, utilisateur, reponses, roles_donnes, roles_introuvables):
-    """Envoie un résumé dans le salon indiqué par SALON_LOGS (Config), si défini."""
     salon_id = CONFIG.get("SALON_LOGS", "").strip()
     if not salon_id.isdigit():
         return
     salon = serveur.get_channel(int(salon_id))
     if salon is None:
         return
-    resume = discord.Embed(
-        title=f"📋 Questionnaire terminé : {utilisateur}",
-        color=COULEUR,
-    )
+    resume = discord.Embed(title=f"📋 Questionnaire terminé : {utilisateur}", color=COULEUR)
     for question, valeurs in zip(QUESTIONS, reponses):
         resume.add_field(name=question["texte"][:250], value=", ".join(valeurs)[:1000] or "—", inline=False)
     if roles_donnes:
@@ -314,23 +348,55 @@ async def journaliser(serveur, utilisateur, reponses, roles_donnes, roles_introu
 
 
 # ============================================================
-# 4. Le bot Discord et ses commandes
+# 5. Bouton permanent « Commencer » (salon d'accueil)
+# ============================================================
+
+class VueBoutonCommencer(discord.ui.View):
+    """Vue persistante : le bouton survit aux redémarrages du bot."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="🌸 Commencer",
+        style=discord.ButtonStyle.success,
+        custom_id="neobot:commencer",
+    )
+    async def commencer(self, interaction: discord.Interaction, bouton: discord.ui.Button):
+        serveur = interaction.guild or (bot.guilds[0] if bot.guilds else None)
+        if serveur is None:
+            await interaction.response.send_message("Erreur : serveur introuvable.", ephemeral=True)
+            return
+        await interaction.response.send_message("📬 Regarde tes messages privés !", ephemeral=True)
+        try:
+            await derouler_questionnaire(interaction.user, serveur)
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ Je n'arrive pas à t'écrire en privé. Active tes messages privés "
+                "(Paramètres de confidentialité du serveur > Messages privés), puis reclique sur le bouton.",
+                ephemeral=True,
+            )
+
+
+# ============================================================
+# 6. Le bot Discord et ses commandes
 # ============================================================
 
 intents = discord.Intents.default()
-intents.members = True  # nécessaire pour détecter les arrivées (à activer aussi sur le site Discord Dev !)
+intents.members = True
 
 
-class BotAccueil(commands.Bot):
+class NEObot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
         self.donnees_chargees = False
 
     async def setup_hook(self):
-        await self.tree.sync()  # publie les commandes /
+        self.add_view(VueBoutonCommencer())  # réactive le bouton après chaque redémarrage
+        await self.tree.sync()
 
 
-bot = BotAccueil()
+bot = NEObot()
 
 
 @bot.event
@@ -342,7 +408,6 @@ async def on_ready():
             print(f"✅ {len(QUESTIONS)} questions chargées depuis Google Sheets.")
         except Exception as erreur:
             print(f"❌ Impossible de lire le Google Sheet : {erreur}")
-        # rend les commandes / disponibles immédiatement sur chaque serveur
         for serveur in bot.guilds:
             bot.tree.copy_global_to(guild=serveur)
             await bot.tree.sync(guild=serveur)
@@ -353,10 +418,19 @@ async def on_ready():
 async def on_member_join(membre: discord.Member):
     if membre.bot:
         return
+
+    # 1) Rôle d'arrivée immédiat (Curieux) : accès lecture seule aux zones publiques
+    role_arrivee = trouver_role(membre.guild, CONFIG.get("ROLE_ARRIVEE", ""))
+    if role_arrivee:
+        try:
+            await membre.add_roles(role_arrivee, reason="Arrivée sur le serveur")
+        except discord.Forbidden:
+            print(f"⚠️ Impossible de donner {role_arrivee.name} (rôle du bot trop bas ?)")
+
+    # 2) Questionnaire en MP
     try:
         await derouler_questionnaire(membre, membre.guild)
     except discord.Forbidden:
-        # MP fermés -> on prévient dans le salon de secours s'il est défini
         salon_id = CONFIG.get("SALON_FALLBACK", "").strip()
         if salon_id.isdigit():
             salon = membre.guild.get_channel(int(salon_id))
@@ -364,7 +438,8 @@ async def on_member_join(membre: discord.Member):
                 try:
                     await salon.send(
                         f"👋 Bienvenue {membre.mention} ! Je n'ai pas pu t'envoyer de message privé. "
-                        "Active tes MP (Paramètres du serveur > Confidentialité) puis tape **/questionnaire** ici."
+                        "Active tes MP (Paramètres du serveur > Confidentialité) puis clique sur le bouton "
+                        "**🌸 Commencer** du salon d'accueil."
                     )
                 except discord.Forbidden:
                     pass
@@ -385,6 +460,59 @@ async def commande_questionnaire(interaction: discord.Interaction):
             "clic droit sur le serveur > Paramètres de confidentialité > Messages privés.",
             ephemeral=True,
         )
+
+
+@bot.tree.command(
+    name="installer-bouton",
+    description="Publier ici le message d'accueil avec le bouton Commencer (admin)",
+)
+@app_commands.default_permissions(administrator=True)
+async def commande_installer_bouton(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="🌸 Bienvenue chez Nippon Explorer !",
+        description=(
+            "Ici, la communauté conçoit et vit des **voyages de groupe au Japon**.\n\n"
+            "**Comment ça marche ?**\n"
+            "1️⃣ Clique sur le bouton **Commencer** ci-dessous.\n"
+            "2️⃣ Réponds au petit questionnaire que je t'envoie en message privé (2 minutes, des clics, pas de texte à taper).\n"
+            "3️⃣ Le serveur s'ouvre à toi : salons de discussion, annonces de voyages, et plus encore.\n\n"
+            "💬 *Si tu ne reçois pas de message privé, active tes MP : clic droit sur l'icône du serveur → "
+            "Paramètres de confidentialité → Messages privés, puis reclique sur le bouton.*"
+        ),
+        color=COULEUR,
+    )
+    await interaction.channel.send(embed=embed, view=VueBoutonCommencer())
+    await interaction.response.send_message("✅ Message d'accueil publié dans ce salon.", ephemeral=True)
+
+
+@bot.tree.command(
+    name="synchro-veterans",
+    description="Donner le rôle « Vétéran » à tous les détenteurs d'un rôle « Vétéran lvl … » (admin)",
+)
+@app_commands.default_permissions(administrator=True)
+async def commande_synchro_veterans(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    serveur = interaction.guild
+    if serveur is None:
+        await interaction.followup.send("Cette commande s'utilise sur le serveur.", ephemeral=True)
+        return
+    parapluie = trouver_role(serveur, "Vétéran")
+    if parapluie is None:
+        await interaction.followup.send("❌ Crée d'abord un rôle nommé exactement **Vétéran**.", ephemeral=True)
+        return
+    ajouts, erreurs = 0, 0
+    async for membre in serveur.fetch_members(limit=None):
+        est_veteran = any(r.name.lower().startswith("vétéran lvl") for r in membre.roles)
+        if est_veteran and parapluie not in membre.roles:
+            try:
+                await membre.add_roles(parapluie, reason="Synchronisation Vétéran")
+                ajouts += 1
+            except discord.Forbidden:
+                erreurs += 1
+    message = f"✅ Rôle **Vétéran** donné à {ajouts} membre(s)."
+    if erreurs:
+        message += f"\n⚠️ {erreurs} échec(s) : vérifie que le rôle du bot est au-dessus de « Vétéran »."
+    await interaction.followup.send(message, ephemeral=True)
 
 
 @bot.tree.command(name="recharger", description="Recharger les questions depuis Google Sheets (admin)")
@@ -412,14 +540,14 @@ async def commande_export(interaction: discord.Interaction):
     tampon = io.StringIO()
     csv.writer(tampon, delimiter=";").writerows(lignes)
     fichier = discord.File(
-        io.BytesIO(tampon.getvalue().encode("utf-8-sig")),  # utf-8-sig : accents corrects dans Excel
+        io.BytesIO(tampon.getvalue().encode("utf-8-sig")),
         filename="reponses_nippon_explorer.csv",
     )
     await interaction.followup.send(f"📊 {max(len(lignes) - 1, 0)} réponse(s) exportée(s).", file=fichier, ephemeral=True)
 
 
 # ============================================================
-# 5. Démarrage
+# 7. Démarrage
 # ============================================================
 
 if __name__ == "__main__":
