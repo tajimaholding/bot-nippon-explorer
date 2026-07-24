@@ -1,5 +1,12 @@
 # Historique des versions de NEObot
 
+## v2.2 / LOT 3 — Annonces de créneaux de voyage (juillet 2026)
+
+- Nouvelle commande admin `/annonce` : publie un embed (titre, dates, prix, places, lien de réservation, description) dans le salon courant.
+- Bouton persistant « ✋ Ça m'intéresse » à bascule avec compteur affiché en direct sur l'annonce.
+- Intéressés enregistrés dans le nouvel onglet **Annonces** du Google Sheet (ID annonce, titre, pseudo, ID Discord, date) — créé automatiquement au premier clic.
+- Aucun changement au questionnaire, au menu des intérêts ni aux dépendances.
+
 ## v2.1 / LOT 2 — Menu des centres d'intérêt (juillet 2026)
 
 - Boutons à bascule persistants : un clic donne le rôle d'accès au salon thématique, un second le retire (réponse éphémère de confirmation).
