@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-NEObot v2.0 — Bot d'accueil de Nippon Explorer
+NEObot v2.1 — Bot d'accueil de Nippon Explorer
 --------------------------------------------
+Nouveauté v2.1 (LOT 2) :
+  • Menu des centres d'intérêt : boutons à bascule qui donnent/retirent des
+    rôles d'accès aux salons thématiques. Configuration dans l'onglet
+    « Intérêts » du Google Sheet ; publication via /installer-menu-interets.
+
 Nouveautés de la v2 (« socle accueil ») :
   • Rôle automatique à l'arrivée (Curieux) — clé Config : ROLE_ARRIVEE
   • Le questionnaire retire ce rôle et donne le rôle final (Visiteur) — clé : ROLE_FINAL
@@ -13,6 +18,7 @@ Nouveautés de la v2 (« socle accueil ») :
 Commandes disponibles sur Discord :
   /questionnaire       -> (re)faire le questionnaire
   /installer-bouton    -> publier le message d'accueil avec le bouton Commencer (admin)
+  /installer-menu-interets -> publier le menu des centres d'intérêt (admin)
   /synchro-veterans    -> donner le rôle Vétéran aux détenteurs d'un rôle « Vétéran lvl » (admin)
   /recharger           -> recharger les questions depuis Google Sheets (admin)
   /export              -> recevoir toutes les réponses en fichier CSV (admin)
@@ -69,6 +75,7 @@ PORTEES_GOOGLE = ["https://www.googleapis.com/auth/spreadsheets"]
 
 QUESTIONS = []
 CONFIG = {}
+INTERETS = []  # boutons du menu des centres d'intérêt : {"etiquette", "role", "emoji"}
 
 
 def ouvrir_classeur():
@@ -80,7 +87,7 @@ def ouvrir_classeur():
 
 def charger_donnees():
     """Lit les onglets Questions / Config et prépare l'onglet Réponses."""
-    global QUESTIONS, CONFIG
+    global QUESTIONS, CONFIG, INTERETS
     classeur = ouvrir_classeur()
 
     lignes = classeur.worksheet("Questions").get_all_records()
@@ -113,6 +120,18 @@ def charger_donnees():
     except gspread.WorksheetNotFound:
         pass
 
+    # --- Onglet "Intérêts" (facultatif) : boutons d'accès aux salons ---
+    interets = []
+    try:
+        for ligne in classeur.worksheet("Intérêts").get_all_records():
+            etiquette = str(ligne.get("Étiquette", "") or ligne.get("Etiquette", "")).strip()
+            role = str(ligne.get("Rôle", "") or ligne.get("Role", "")).strip()
+            emoji = str(ligne.get("Emoji", "")).strip()
+            if etiquette and role:
+                interets.append({"etiquette": etiquette[:80], "role": role, "emoji": emoji})
+    except gspread.WorksheetNotFound:
+        pass
+
     try:
         feuille_r = classeur.worksheet("Réponses")
     except gspread.WorksheetNotFound:
@@ -122,6 +141,7 @@ def charger_donnees():
 
     QUESTIONS = questions
     CONFIG = config
+    INTERETS = interets
 
 
 def enregistrer_reponses(utilisateur, reponses):
@@ -379,6 +399,73 @@ class VueBoutonCommencer(discord.ui.View):
 
 
 # ============================================================
+# 5bis. Menu des centres d'intérêt (boutons à bascule persistants)
+# ============================================================
+
+class BoutonInteret(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"neobot:interet:(?P<nom>.+)",
+):
+    """Bouton persistant : un clic donne le rôle d'accès, un second le retire."""
+
+    def __init__(self, etiquette: str, nom_role: str, emoji: str = ""):
+        self.nom_role = nom_role
+        super().__init__(
+            discord.ui.Button(
+                label=etiquette[:80],
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"neobot:interet:{nom_role}"[:100],
+                emoji=emoji or None,
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        # Reconstruit le bouton après un redémarrage du bot
+        return cls(item.label or match["nom"], match["nom"])
+
+    async def callback(self, interaction: discord.Interaction):
+        serveur = interaction.guild
+        if serveur is None:
+            await interaction.response.send_message("Ce bouton s'utilise sur le serveur.", ephemeral=True)
+            return
+        role = trouver_role(serveur, self.nom_role)
+        if role is None:
+            await interaction.response.send_message(
+                f"❌ Le rôle « {self.nom_role} » n'existe pas (ou plus). Signale-le à un administrateur.",
+                ephemeral=True,
+            )
+            return
+        membre = interaction.user
+        try:
+            if role in membre.roles:
+                await membre.remove_roles(role, reason="Menu des centres d'intérêt")
+                await interaction.response.send_message(f"➖ Accès **{role.name}** désactivé.", ephemeral=True)
+            else:
+                await membre.add_roles(role, reason="Menu des centres d'intérêt")
+                await interaction.response.send_message(f"✅ Accès **{role.name}** activé !", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ Je n'ai pas le droit de gérer ce rôle (rôle du bot trop bas). Signale-le à un administrateur.",
+                ephemeral=True,
+            )
+
+
+def construire_menus_interets():
+    """Répartit les boutons en messages de 25 maximum (limite Discord)."""
+    vues = []
+    for depart in range(0, len(INTERETS), 25):
+        vue = discord.ui.View(timeout=None)
+        for interet in INTERETS[depart:depart + 25]:
+            try:
+                vue.add_item(BoutonInteret(interet["etiquette"], interet["role"], interet["emoji"]))
+            except Exception as erreur:
+                print(f"[Menu intérêts] Bouton ignoré ({interet['etiquette']}) : {erreur}")
+        vues.append(vue)
+    return vues
+
+
+# ============================================================
 # 6. Le bot Discord et ses commandes
 # ============================================================
 
@@ -393,6 +480,7 @@ class NEObot(commands.Bot):
 
     async def setup_hook(self):
         self.add_view(VueBoutonCommencer())  # réactive le bouton après chaque redémarrage
+        self.add_dynamic_items(BoutonInteret)  # réactive les boutons d'intérêt
         await self.tree.sync()
 
 
@@ -486,6 +574,40 @@ async def commande_installer_bouton(interaction: discord.Interaction):
 
 
 @bot.tree.command(
+    name="installer-menu-interets",
+    description="Publier ici le menu des centres d'intérêt (admin)",
+)
+@app_commands.default_permissions(administrator=True)
+async def commande_installer_menu_interets(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    if not INTERETS:
+        await interaction.followup.send(
+            "❌ Aucun bouton configuré. Remplis l'onglet **Intérêts** du Google Sheet "
+            "(colonnes : Étiquette / Rôle / Emoji), puis tape **/recharger**.",
+            ephemeral=True,
+        )
+        return
+    serveur = interaction.guild
+    manquants = [i["role"] for i in INTERETS if serveur and trouver_role(serveur, i["role"]) is None]
+    embed = discord.Embed(
+        title="🎴 Choisis tes centres d'intérêt",
+        description=(
+            "Clique sur les boutons ci-dessous pour **ouvrir les salons** qui t'intéressent.\n"
+            "Un clic active l'accès, un second clic le retire. Tu peux changer d'avis à tout moment !"
+        ),
+        color=COULEUR,
+    )
+    vues = construire_menus_interets()
+    await interaction.channel.send(embed=embed, view=vues[0])
+    for vue in vues[1:]:
+        await interaction.channel.send(view=vue)
+    confirmation = f"✅ Menu publié : {len(INTERETS)} bouton(s) sur {len(vues)} message(s)."
+    if manquants:
+        confirmation += "\n⚠️ Rôles à créer (boutons inopérants d'ici là) : " + ", ".join(manquants)
+    await interaction.followup.send(confirmation, ephemeral=True)
+
+
+@bot.tree.command(
     name="synchro-veterans",
     description="Donner le rôle « Vétéran » à tous les détenteurs d'un rôle « Vétéran lvl … » (admin)",
 )
@@ -525,7 +647,11 @@ async def commande_recharger(interaction: discord.Interaction):
         await interaction.followup.send(f"❌ Erreur de lecture du Google Sheet : {erreur}", ephemeral=True)
         return
     liste = "\n".join(f"{n}. {q['texte']} ({len(q['options'])} choix)" for n, q in enumerate(QUESTIONS, 1))
-    await interaction.followup.send(f"✅ **{len(QUESTIONS)} questions chargées :**\n{liste}", ephemeral=True)
+    await interaction.followup.send(
+        f"✅ **{len(QUESTIONS)} questions chargées :**\n{liste}\n"
+        f"🎴 Boutons d'intérêt configurés : {len(INTERETS)}",
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="export", description="Exporter toutes les réponses en fichier CSV (admin)")

@@ -1,6 +1,6 @@
 # Commandes et interactions de NEObot
 
-*Dernière mise à jour : LOT 1 (état v2).*
+*Dernière mise à jour : LOT 2 (état v2.1).*
 
 ## Commandes visibles par tous
 
@@ -10,10 +10,16 @@
 ### Bouton 🌸 Commencer (salon #bienvenue)
 Même effet que `/questionnaire`. Bouton **persistant** : il survit aux redémarrages du bot.
 
+### Boutons 🎴 du menu des centres d'intérêt
+Boutons à bascule persistants : un clic donne le rôle d'accès au salon thématique correspondant, un second clic le retire. Confirmation en message éphémère. Configuration : onglet **Intérêts** du Google Sheet (Étiquette / Rôle / Emoji) + `/recharger`.
+
 ## Commandes réservées aux administrateurs
 
 ### /installer-bouton
 Publie dans le salon courant le message d'accueil avec le bouton 🌸 Commencer. À n'exécuter normalement qu'une fois, dans `#bienvenue`.
+
+### /installer-menu-interets
+Publie dans le salon courant le menu des centres d'intérêt (embed + boutons, 25 max par message — messages supplémentaires automatiques au-delà). Signale en éphémère les rôles configurés dans le Sheet mais absents du serveur. Pour mettre le menu à jour après modification du Sheet : `/recharger`, supprimer les anciens messages du menu, puis relancer la commande.
 
 ### /synchro-veterans
 Donne le rôle `Vétéran` à tout membre possédant un rôle commençant par « Vétéran lvl ». Compte-rendu : nombre d'ajouts et d'échecs.
@@ -83,7 +89,29 @@ Action : modifier le libellé d'une option dans le Sheet → `/recharger` → v�
 
 Résultat attendu : modification visible dans la liste ; CSV lisible dans Excel avec accents corrects et toutes les lignes de l'onglet Réponses. Remettre le libellé d'origine puis `/recharger`.
 
-## TEST 7 — Non-régression après redéploiement
+## TEST 7 — Menu des intérêts : bascule
+
+Préconditions : onglet Intérêts rempli, `/recharger` effectué, rôles créés, menu publié via `/installer-menu-interets`, salon thématique visible uniquement par son rôle.
+
+Action : cliquer un bouton (ex. Mangas), vérifier l'apparition du salon ; recliquer le même bouton.
+
+Résultat attendu : message éphémère « ✅ Accès Mangas activé ! » puis salon visible ; au second clic « ➖ Accès Mangas désactivé. » et salon masqué. Aucune erreur dans les logs Render.
+
+## TEST 8 — Menu des intérêts : rôle manquant
+
+Préconditions : ajouter dans l'onglet Intérêts une ligne vers un rôle inexistant, `/recharger`.
+
+Action : exécuter `/installer-menu-interets` dans un salon de test, cliquer le bouton concerné.
+
+Résultat attendu : la commande signale le rôle manquant ; le clic répond « ❌ Le rôle … n'existe pas » sans plantage. Nettoyer : supprimer la ligne, `/recharger`, supprimer le message de test.
+
+## TEST 9 — Menu des intérêts : persistance
+
+Action : sur Render, Manual Deploy → Deploy latest commit ; après redémarrage, cliquer un bouton du menu publié AVANT le redéploiement.
+
+Résultat attendu : le bouton fonctionne toujours (bascule normale).
+
+## TEST 10 — Non-régression générale après redéploiement
 
 Action : sur Render, Manual Deploy → Deploy latest commit ; attendre la fin ; cliquer le bouton 🌸 Commencer d'un message publié AVANT le redéploiement.
 

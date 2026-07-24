@@ -1,5 +1,12 @@
 # Historique des versions de NEObot
 
+## v2.1 / LOT 2 — Menu des centres d'intérêt (juillet 2026)
+
+- Boutons à bascule persistants : un clic donne le rôle d'accès au salon thématique, un second le retire (réponse éphémère de confirmation).
+- Configuration sans code dans le nouvel onglet **Intérêts** du Google Sheet (colonnes Étiquette / Rôle / Emoji), appliquée par `/recharger`.
+- Nouvelle commande admin `/installer-menu-interets` : publie le menu dans le salon courant (répartition automatique en messages de 25 boutons maximum, signalement des rôles manquants).
+- Aucun changement au questionnaire ni aux dépendances.
+
 ## LOT 1 — Socle documentaire (juillet 2026)
 
 Aucune modification de code. Création de README.md, docs/ARCHITECTURE.md, docs/COMMANDS.md, docs/ENVIRONMENT.md, docs/CHANGELOG.md et .gitignore. Adoption officielle du cadre de développement par lots (Python, workflow GitHub web, découpage modulaire différé au lot base de données).
