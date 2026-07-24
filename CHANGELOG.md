@@ -1,0 +1,22 @@
+# Historique des versions de NEObot
+
+## LOT 1 — Socle documentaire (juillet 2026)
+
+Aucune modification de code. Création de README.md, docs/ARCHITECTURE.md, docs/COMMANDS.md, docs/ENVIRONMENT.md, docs/CHANGELOG.md et .gitignore. Adoption officielle du cadre de développement par lots (Python, workflow GitHub web, découpage modulaire différé au lot base de données).
+
+## v2 — Socle accueil (juillet 2026)
+
+- Rôle automatique à l'arrivée (`ROLE_ARRIVEE`, Curieux) ; retiré à la fin du questionnaire au profit de `ROLE_FINAL` (Visiteur).
+- Bouton persistant 🌸 Commencer + commande `/installer-bouton` pour le publier dans `#bienvenue`.
+- Question « aisance Discord » (via le Sheet) avec orientation des débutants vers `#débuter-sur-discord` (`GUIDE_QUESTION`, `GUIDE_REPONSES`, `SALON_GUIDE`).
+- `/synchro-veterans` : rôle parapluie `Vétéran` pour les détenteurs d'un rôle « Vétéran lvl 1-7 ».
+- Suppression du mapping `Autre=Visiteur` (remplacé par `ROLE_FINAL` pour tous).
+- Préparation de l'ouverture au public : structure de catégories/permissions documentée (Accueil / Voyages / Communauté / Futurs voyageurs / Cercle Vétérans / Teams).
+
+## v1 — Bot d'accueil initial (juillet 2026)
+
+- Questionnaire d'accueil en MP (menus cliquables), 5 questions configurables dans un Google Sheet (onglets Questions/Config/Réponses).
+- Attribution de rôles selon la provenance (Team Fildrong, Team Ascuns, Team Iconoclaste, Team ASMR, Team Edwin, Team Acekid, Filleul(e), Visiteur).
+- Enregistrement des réponses dans le Sheet ; `/questionnaire`, `/recharger`, `/export`.
+- Journalisation optionnelle (`SALON_LOGS`), salon de secours MP fermés (`SALON_FALLBACK`).
+- Déploiement : GitHub → Render (plan gratuit) + UptimeRobot ; secrets en variables d'environnement.
