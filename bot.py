@@ -725,6 +725,9 @@ async def commande_annonce(
     lien: str,
     description: str = "",
 ):
+    # Répondre à Discord AVANT de publier : la limite des 3 secondes est
+    # facilement dépassée quand l'hébergeur gratuit est lent à réagir.
+    await interaction.response.defer(ephemeral=True)
     ident = int(datetime.now(timezone.utc).timestamp())
     embed = discord.Embed(
         title=f"🗾 {titre}"[:256],
@@ -738,8 +741,16 @@ async def commande_annonce(
     embed.set_footer(text="Clique sur « Ça m'intéresse » pour être compté — sans engagement.")
     vue = discord.ui.View(timeout=None)
     vue.add_item(BoutonAnnonce(ident, 0))
-    await interaction.channel.send(embed=embed, view=vue)
-    await interaction.response.send_message("✅ Annonce publiée dans ce salon.", ephemeral=True)
+    try:
+        await interaction.channel.send(embed=embed, view=vue)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ Je n'ai pas la permission d'écrire dans ce salon. "
+            "Vérifie mes permissions ici (Envoyer des messages, Intégrer des liens) puis réessaie.",
+            ephemeral=True,
+        )
+        return
+    await interaction.followup.send("✅ Annonce publiée dans ce salon.", ephemeral=True)
 
 
 @bot.tree.command(
