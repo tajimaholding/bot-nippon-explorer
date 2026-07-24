@@ -1,6 +1,6 @@
 # Commandes et interactions de NEObot
 
-*Dernière mise à jour : LOT 2 (état v2.1).*
+*Dernière mise à jour : LOT 3 (état v2.2).*
 
 ## Commandes visibles par tous
 
@@ -9,6 +9,9 @@
 
 ### Bouton 🌸 Commencer (salon #bienvenue)
 Même effet que `/questionnaire`. Bouton **persistant** : il survit aux redémarrages du bot.
+
+### Bouton ✋ « Ça m'intéresse » (annonces de voyage)
+Bouton persistant à bascule sous chaque annonce : un clic inscrit le membre parmi les intéressés (compteur mis à jour sur l'annonce, ligne ajoutée dans l'onglet **Annonces** du Sheet), un second clic le désinscrit. Sans engagement.
 
 ### Boutons 🎴 du menu des centres d'intérêt
 Boutons à bascule persistants : un clic donne le rôle d'accès au salon thématique correspondant, un second clic le retire. Confirmation en message éphémère. Configuration : onglet **Intérêts** du Google Sheet (Étiquette / Rôle / Emoji) + `/recharger`.
@@ -20,6 +23,9 @@ Publie dans le salon courant le message d'accueil avec le bouton 🌸 Commencer.
 
 ### /installer-menu-interets
 Publie dans le salon courant le menu des centres d'intérêt (embed + boutons, 25 max par message — messages supplémentaires automatiques au-delà). Signale en éphémère les rôles configurés dans le Sheet mais absents du serveur. Pour mettre le menu à jour après modification du Sheet : `/recharger`, supprimer les anciens messages du menu, puis relancer la commande.
+
+### /annonce
+Publie une annonce de créneau de voyage dans le salon courant. Paramètres guidés : `titre`, `dates`, `prix`, `places`, `lien` (page de réservation), `description` (facultatif). L'annonce comporte le bouton ✋ Ça m'intéresse. Qui est intéressé par quoi : onglet **Annonces** du Google Sheet.
 
 ### /synchro-veterans
 Donne le rôle `Vétéran` à tout membre possédant un rôle commençant par « Vétéran lvl ». Compte-rendu : nombre d'ajouts et d'échecs.
@@ -111,7 +117,21 @@ Action : sur Render, Manual Deploy → Deploy latest commit ; après redémarrag
 
 Résultat attendu : le bouton fonctionne toujours (bascule normale).
 
-## TEST 10 — Non-régression générale après redéploiement
+## TEST 10 — Annonce : publication et bascule
+
+Préconditions : bot en ligne ; salon de test.
+
+Action : `/annonce` avec des valeurs de test (titre « TEST — à supprimer », places 20, un vrai lien) ; cliquer ✋ Ça m'intéresse ; vérifier l'onglet Annonces du Sheet ; recliquer.
+
+Résultat attendu : embed complet publié ; premier clic → « ✅ C'est noté… », compteur passe à (1), ligne ajoutée dans l'onglet Annonces (créé automatiquement au premier clic) ; second clic → « ➖ C'est retiré… », compteur à (0), ligne supprimée. Nettoyer : supprimer le message de test.
+
+## TEST 11 — Annonce : persistance et second compte
+
+Action : publier une annonce de test ; faire cliquer un second compte (ou un ami) ; sur Render, Manual Deploy → Deploy latest commit ; après redémarrage, cliquer avec le premier compte.
+
+Résultat attendu : le compteur cumule correctement les deux membres ; après redéploiement, le bouton fonctionne toujours et le compteur reste juste (les données sont dans le Sheet, pas en mémoire).
+
+## TEST 12 — Non-régression générale après redéploiement
 
 Action : sur Render, Manual Deploy → Deploy latest commit ; attendre la fin ; cliquer le bouton 🌸 Commencer d'un message publié AVANT le redéploiement.
 
