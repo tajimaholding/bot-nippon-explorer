@@ -1,7 +1,7 @@
 # Architecture de NEObot
 
 *Document de référence — à mettre à jour à chaque lot qui modifie la structure.*
-*Dernière mise à jour : LOT 1 (état v2).*
+*Dernière mise à jour : LOT 2 (état v2.1).*
 
 ## 1. Vue d'ensemble
 
@@ -40,6 +40,7 @@ Le code tient dans un seul fichier `bot.py` (~556 lignes), découpé en 7 sectio
 | 3. Outils rôles | `trouver_role`, `obtenir_membre` (fonctions génériques) | `src/utils/` |
 | 4. Questionnaire | Logique métier : déroulé des questions en MP, attribution des rôles, journalisation | `src/services/onboarding` |
 | 5. Bouton Commencer | Vue persistante du salon d'accueil | `src/events/` |
+| 5bis. Menu intérêts | Boutons à bascule persistants donnant/retirant les rôles d'accès thématiques | `src/commands/roles/` |
 | 6. Bot + commandes | Réception des commandes/événements Discord, appels aux sections 2-4, réponses | `src/commands/` + `src/events/` |
 | 7. Démarrage | Lancement serveur web + bot | point d'entrée |
 
@@ -62,6 +63,7 @@ La séparation des responsabilités du cahier des charges (commands → services
 |---|---|---|
 | Questions, options, mapping rôles | Sheet « Questions » | ✅ persistant |
 | Réglages (ROLE_FINAL, SALON_LOGS…) | Sheet « Config » | ✅ persistant |
+| Boutons d'intérêt (étiquette, rôle, emoji) | Sheet « Intérêts » | ✅ persistant |
 | Profils : date, pseudo, ID Discord, réponses | Sheet « Réponses » | ✅ persistant |
 | Sessions de questionnaire en cours | Mémoire (`sessions_en_cours`) | ❌ perdu au redémarrage (acceptable : le membre reclique sur Commencer) |
 
@@ -91,4 +93,4 @@ Secrets exclusivement dans les variables d'environnement Render (`DISCORD_TOKEN`
 
 ## 9. Évolution prévue
 
-LOT 2 : salon de redirection par boutons (accès aux salons thématiques). LOT 3 : `/annonce` (créneaux de voyage). LOT 4 : base de données Postgres + découpage en modules + premiers tests automatiques — ce lot mettra à jour le présent document.
+LOT 2 (fait, v2.1) : salon de redirection par boutons. LOT 2bis (proposé) : pré-attribution des accès selon les réponses au questionnaire. LOT 3 : `/annonce` (créneaux de voyage). LOT 4 : base de données Postgres + découpage en modules + premiers tests automatiques — ce lot mettra à jour le présent document.
