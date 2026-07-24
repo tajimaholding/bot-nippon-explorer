@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-NEObot v2.1 — Bot d'accueil de Nippon Explorer
+NEObot v2.2 — Bot d'accueil de Nippon Explorer
 --------------------------------------------
+Nouveauté v2.2 (LOT 3) :
+  • Annonces de créneaux de voyage : commande admin /annonce (titre, dates,
+    prix, places, lien) avec bouton persistant « ✋ Ça m'intéresse » à bascule,
+    compteur affiché sur l'annonce, intéressés enregistrés dans l'onglet
+    « Annonces » du Google Sheet.
+
 Nouveauté v2.1 (LOT 2) :
   • Menu des centres d'intérêt : boutons à bascule qui donnent/retirent des
     rôles d'accès aux salons thématiques. Configuration dans l'onglet
@@ -19,6 +25,7 @@ Commandes disponibles sur Discord :
   /questionnaire       -> (re)faire le questionnaire
   /installer-bouton    -> publier le message d'accueil avec le bouton Commencer (admin)
   /installer-menu-interets -> publier le menu des centres d'intérêt (admin)
+  /annonce             -> publier une annonce de créneau de voyage (admin)
   /synchro-veterans    -> donner le rôle Vétéran aux détenteurs d'un rôle « Vétéran lvl » (admin)
   /recharger           -> recharger les questions depuis Google Sheets (admin)
   /export              -> recevoir toutes les réponses en fichier CSV (admin)
@@ -155,6 +162,38 @@ def enregistrer_reponses(utilisateur, reponses):
 def lire_toutes_les_reponses():
     classeur = ouvrir_classeur()
     return classeur.worksheet("Réponses").get_all_values()
+
+
+def basculer_interet_annonce(annonce_id, titre, utilisateur):
+    """Inscrit ou désinscrit un intéressé dans l'onglet Annonces.
+    Retourne (ajouté: bool, nouveau_compte: int)."""
+    classeur = ouvrir_classeur()
+    try:
+        feuille = classeur.worksheet("Annonces")
+    except gspread.WorksheetNotFound:
+        feuille = classeur.add_worksheet(title="Annonces", rows=2000, cols=6)
+        feuille.update(
+            range_name="A1",
+            values=[["ID annonce", "Titre", "Pseudo", "ID Discord", "Date"]],
+        )
+    valeurs = feuille.get_all_values()
+    compte_actuel = sum(
+        1 for ligne in valeurs[1:] if len(ligne) >= 1 and ligne[0] == str(annonce_id)
+    )
+    for indice, ligne in enumerate(valeurs[1:], start=2):
+        if (
+            len(ligne) >= 4
+            and ligne[0] == str(annonce_id)
+            and ligne[3] == str(utilisateur.id)
+        ):
+            feuille.delete_rows(indice)
+            return False, max(compte_actuel - 1, 0)
+    date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    feuille.append_row(
+        [str(annonce_id), titre, str(utilisateur), str(utilisateur.id), date],
+        value_input_option="USER_ENTERED",
+    )
+    return True, compte_actuel + 1
 
 
 # ============================================================
@@ -466,6 +505,63 @@ def construire_menus_interets():
 
 
 # ============================================================
+# 5ter. Annonces de voyage (bouton « Ça m'intéresse » persistant)
+# ============================================================
+
+class BoutonAnnonce(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"neobot:annonce:(?P<ident>\d+)",
+):
+    """Bouton persistant : inscrit/désinscrit l'intéressé et met à jour le compteur."""
+
+    def __init__(self, ident, compte: int = 0):
+        self.ident = int(ident)
+        super().__init__(
+            discord.ui.Button(
+                label=f"✋ Ça m'intéresse ({compte})",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"neobot:annonce:{ident}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["ident"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        titre = ""
+        if interaction.message and interaction.message.embeds:
+            titre = interaction.message.embeds[0].title or ""
+        try:
+            ajoute, compte = await asyncio.to_thread(
+                basculer_interet_annonce, self.ident, titre, interaction.user
+            )
+        except Exception as erreur:
+            print(f"[ERREUR Annonces] {erreur}")
+            await interaction.followup.send(
+                "❌ Petit souci technique, réessaie dans une minute.", ephemeral=True
+            )
+            return
+        vue = discord.ui.View(timeout=None)
+        vue.add_item(BoutonAnnonce(self.ident, compte))
+        try:
+            await interaction.message.edit(view=vue)
+        except discord.HTTPException:
+            pass
+        if ajoute:
+            await interaction.followup.send(
+                "✅ C'est noté, tu es compté(e) parmi les intéressés ! "
+                "Clique à nouveau si tu changes d'avis.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.followup.send(
+                "➖ C'est retiré. Tu peux te réinscrire à tout moment.", ephemeral=True
+            )
+
+
+# ============================================================
 # 6. Le bot Discord et ses commandes
 # ============================================================
 
@@ -480,7 +576,7 @@ class NEObot(commands.Bot):
 
     async def setup_hook(self):
         self.add_view(VueBoutonCommencer())  # réactive le bouton après chaque redémarrage
-        self.add_dynamic_items(BoutonInteret)  # réactive les boutons d'intérêt
+        self.add_dynamic_items(BoutonInteret, BoutonAnnonce)  # réactive les boutons persistants
         await self.tree.sync()
 
 
@@ -605,6 +701,45 @@ async def commande_installer_menu_interets(interaction: discord.Interaction):
     if manquants:
         confirmation += "\n⚠️ Rôles à créer (boutons inopérants d'ici là) : " + ", ".join(manquants)
     await interaction.followup.send(confirmation, ephemeral=True)
+
+
+@bot.tree.command(
+    name="annonce",
+    description="Publier ici une annonce de créneau de voyage (admin)",
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.describe(
+    titre="Titre du voyage (ex. Japon d'automne — Tokyo & Kyoto)",
+    dates="Dates du créneau (ex. 12 au 26 octobre 2026)",
+    prix="Prix par personne (ex. 3 200 €)",
+    places="Nombre de places disponibles",
+    lien="Lien vers la page de réservation",
+    description="Texte libre de présentation (facultatif)",
+)
+async def commande_annonce(
+    interaction: discord.Interaction,
+    titre: str,
+    dates: str,
+    prix: str,
+    places: int,
+    lien: str,
+    description: str = "",
+):
+    ident = int(datetime.now(timezone.utc).timestamp())
+    embed = discord.Embed(
+        title=f"🗾 {titre}"[:256],
+        description=description[:2000] or None,
+        color=COULEUR,
+    )
+    embed.add_field(name="📅 Dates", value=dates[:1024], inline=True)
+    embed.add_field(name="💶 Prix", value=prix[:1024], inline=True)
+    embed.add_field(name="🎫 Places", value=str(places), inline=True)
+    embed.add_field(name="🔗 Réservation", value=lien[:1024], inline=False)
+    embed.set_footer(text="Clique sur « Ça m'intéresse » pour être compté — sans engagement.")
+    vue = discord.ui.View(timeout=None)
+    vue.add_item(BoutonAnnonce(ident, 0))
+    await interaction.channel.send(embed=embed, view=vue)
+    await interaction.response.send_message("✅ Annonce publiée dans ce salon.", ephemeral=True)
 
 
 @bot.tree.command(
