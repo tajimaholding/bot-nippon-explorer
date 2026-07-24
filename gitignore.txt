@@ -1,0 +1,20 @@
+# Fichier .gitignore — préventif (le projet n'a pas de copie locale à ce jour)
+# Protège contre l'ajout accidentel de secrets ou de fichiers générés.
+
+# Secrets — ne JAMAIS committer
+.env
+.env.*
+!.env.example
+*.json  # bloque notamment la clé du compte de service Google
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Divers
+logs/
+*.log
+.DS_Store
+Thumbs.db
