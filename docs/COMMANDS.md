@@ -1,6 +1,6 @@
 # Commandes et interactions de NEObot
 
-*Dernière mise à jour : LOT 4 (état v2.3).*
+*Dernière mise à jour : LOT 5 (état v2.4).*
 
 ## Commandes visibles par tous
 
@@ -53,6 +53,9 @@ Garde-fous : le bot ne supprime jamais un rôle ; `administrateur`, `gerer-serve
 ### /synchro-veterans
 Donne le rôle `Vétéran` à tout membre possédant un rôle commençant par « Vétéran lvl ». Compte-rendu : nombre d'ajouts et d'échecs.
 
+### /invitations
+Tableau de bord des invitations : pour chaque ligne de l'onglet **Invitations** du Sheet (Code / Étiquette / Rôle), affiche le nombre d'utilisations en direct et le rôle attribué ; liste aussi les invitations du serveur non suivies. L'historique détaillé arrivée par arrivée est dans l'onglet **Arrivées**.
+
 ### /recharger
 Recharge questions et configuration depuis le Google Sheet. À exécuter après **chaque** modification du Sheet. Affiche la liste des questions chargées.
 
@@ -63,7 +66,7 @@ Envoie toutes les réponses en CSV (séparateur `;`, encodage compatible Excel).
 
 | Événement | Action |
 |---|---|
-| Arrivée d'un membre | Rôle `ROLE_ARRIVEE` (Curieux) + questionnaire en MP |
+| Arrivée d'un membre | Détection de l'invitation utilisée → rôle Team automatique + ligne dans l'onglet Arrivées, puis rôle `ROLE_ARRIVEE` (Curieux) + questionnaire en MP |
 | MP fermés à l'arrivée | Message d'orientation dans `SALON_FALLBACK` (si configuré) |
 | Fin de questionnaire | Rôles des réponses + `ROLE_FINAL`, retrait `ROLE_ARRIVEE`, enregistrement Sheet, résumé dans `SALON_LOGS` (si configuré) |
 | Réponse « Je débute sur Discord » | Le message de fin pointe vers le salon `SALON_GUIDE` |
@@ -168,7 +171,21 @@ Action : dans le Sheet, mettre `administrateur` dans les permissions d'un rôle,
 
 Résultat attendu : l'aperçu affiche les avertissements (« refusé », « couleur inconnue ») ; les permissions du rôle fautif ne sont PAS modifiées même après confirmation ; aucun rôle n'est jamais supprimé. Remettre le Sheet en état.
 
-## TEST 14 — Non-régression générale après redéploiement
+## TEST 14 — Invitations : détection et attribution
+
+Préconditions : une invitation permanente créée dans Discord ; son code collé dans l'onglet Invitations avec une étiquette et un rôle existant ; `/recharger` (la réponse affiche « 📨 Invitations suivies : N »).
+
+Action : faire rejoindre un compte de test via CE lien d'invitation.
+
+Résultat attendu : le compte reçoit le rôle Team automatiquement (avant même le questionnaire) ; une ligne apparaît dans l'onglet Arrivées avec le bon code et la bonne étiquette ; `/invitations` affiche le compteur incrémenté.
+
+## TEST 15 — Invitations : cas non suivi
+
+Action : faire rejoindre un compte de test via une invitation NON listée dans le Sheet.
+
+Résultat attendu : aucune erreur ; ligne dans Arrivées avec « invitation non référencée » ; aucun rôle Team attribué ; le questionnaire se déroule normalement.
+
+## TEST 16 — Non-régression générale après redéploiement
 
 Action : sur Render, Manual Deploy → Deploy latest commit ; attendre la fin ; cliquer le bouton 🌸 Commencer d'un message publié AVANT le redéploiement.
 

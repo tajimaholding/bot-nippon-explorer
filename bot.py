@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-NEObot v2.3 — Bot d'accueil de Nippon Explorer
+NEObot v2.4 — Bot d'accueil de Nippon Explorer
 --------------------------------------------
+Nouveauté v2.4 (LOT 5) :
+  • Suivi des invitations par influenceur : onglet « Invitations » du Sheet
+    (Code / Étiquette / Rôle), détection automatique de l'invitation utilisée
+    à chaque arrivée, attribution du rôle Team correspondant, historique dans
+    l'onglet « Arrivées », tableau de bord /invitations.
+
 Nouveauté v2.3 (LOT 4) :
   • Gestion des rôles pilotée par le Google Sheet : onglet « Rôles »
     (Nom / Couleur / Séparé / Mentionnable / Permissions en mots-clés
@@ -34,6 +40,7 @@ Commandes disponibles sur Discord :
   /installer-menu-interets -> publier le menu des centres d'intérêt (admin)
   /annonce             -> publier une annonce de créneau de voyage (admin)
   /synchro-roles       -> synchroniser les rôles du serveur avec l'onglet Rôles (admin)
+  /invitations         -> tableau de bord des invitations par influenceur (admin)
   /synchro-veterans    -> donner le rôle Vétéran aux détenteurs d'un rôle « Vétéran lvl » (admin)
   /recharger           -> recharger les questions depuis Google Sheets (admin)
   /export              -> recevoir toutes les réponses en fichier CSV (admin)
@@ -93,6 +100,8 @@ QUESTIONS = []
 CONFIG = {}
 INTERETS = []  # boutons du menu des centres d'intérêt : {"etiquette", "role", "emoji"}
 ROLES_CONFIG = []  # onglet « Rôles » : description des rôles à synchroniser
+INVITATIONS = {}   # onglet « Invitations » : code -> {"etiquette", "role"}
+CACHE_INVITATIONS = {}  # serveur_id -> {code: nombre d'utilisations} (perdu au redémarrage : resynchronisé)
 
 
 def ouvrir_classeur():
@@ -102,9 +111,17 @@ def ouvrir_classeur():
     return client.open_by_key(os.environ["SHEET_ID"])
 
 
+def normaliser_code_invitation(texte):
+    """Accepte un code brut (abc123) ou un lien complet (https://discord.gg/abc123)."""
+    brut = str(texte).strip().rstrip("/")
+    if not brut:
+        return ""
+    return brut.split("/")[-1]
+
+
 def charger_donnees():
     """Lit les onglets Questions / Config et prépare l'onglet Réponses."""
-    global QUESTIONS, CONFIG, INTERETS, ROLES_CONFIG
+    global QUESTIONS, CONFIG, INTERETS, ROLES_CONFIG, INVITATIONS
     classeur = ouvrir_classeur()
 
     lignes = classeur.worksheet("Questions").get_all_records()
@@ -173,10 +190,23 @@ def charger_donnees():
     except gspread.WorksheetNotFound:
         pass
 
+    # --- Onglet "Invitations" (facultatif) : suivi par influenceur ---
+    invitations = {}
+    try:
+        for ligne in classeur.worksheet("Invitations").get_all_records():
+            code = normaliser_code_invitation(str(ligne.get("Code", "")))
+            etiquette = str(ligne.get("Étiquette", "") or ligne.get("Etiquette", "")).strip()
+            role = str(ligne.get("Rôle", "") or ligne.get("Role", "")).strip()
+            if code and role:
+                invitations[code] = {"etiquette": etiquette or code, "role": role}
+    except gspread.WorksheetNotFound:
+        pass
+
     QUESTIONS = questions
     CONFIG = config
     INTERETS = interets
     ROLES_CONFIG = roles_config
+    INVITATIONS = invitations
 
 
 def enregistrer_reponses(utilisateur, reponses):
@@ -190,6 +220,24 @@ def enregistrer_reponses(utilisateur, reponses):
 def lire_toutes_les_reponses():
     classeur = ouvrir_classeur()
     return classeur.worksheet("Réponses").get_all_values()
+
+
+def enregistrer_arrivee(membre, code, etiquette, role_attribue):
+    """Ajoute une ligne dans l'onglet Arrivées (créé au besoin)."""
+    classeur = ouvrir_classeur()
+    try:
+        feuille = classeur.worksheet("Arrivées")
+    except gspread.WorksheetNotFound:
+        feuille = classeur.add_worksheet(title="Arrivées", rows=2000, cols=8)
+        feuille.update(
+            range_name="A1",
+            values=[["Date", "Pseudo", "ID Discord", "Code invitation", "Influenceur", "Rôle attribué"]],
+        )
+    date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    feuille.append_row(
+        [date, str(membre), str(membre.id), code, etiquette, role_attribue],
+        value_input_option="USER_ENTERED",
+    )
 
 
 def basculer_interet_annonce(annonce_id, titre, utilisateur):
@@ -847,6 +895,38 @@ async def journaliser_synchro_roles(serveur, auteur, faits, echecs):
 
 
 # ============================================================
+# 5quinquies. Suivi des invitations par influenceur
+# ============================================================
+
+async def synchroniser_cache_invitations(serveur):
+    """Mémorise le compteur d'utilisations de chaque invitation du serveur."""
+    try:
+        invitations = await serveur.invites()
+    except discord.Forbidden:
+        print("⚠️ Permission « Gérer le serveur » requise pour lire les invitations.")
+        return
+    CACHE_INVITATIONS[serveur.id] = {inv.code: inv.uses or 0 for inv in invitations}
+
+
+async def detecter_invitation(serveur):
+    """Compare les compteurs avant/après une arrivée.
+    Retourne le code utilisé, ou None si indéterminé (0 ou plusieurs candidats)."""
+    avant = CACHE_INVITATIONS.get(serveur.id, {})
+    try:
+        actuelles = await serveur.invites()
+    except discord.Forbidden:
+        return None
+    apres = {inv.code: inv.uses or 0 for inv in actuelles}
+    CACHE_INVITATIONS[serveur.id] = apres
+    candidats = [code for code, uses in apres.items() if uses > avant.get(code, 0)]
+    # Une invitation à nombre d'usages limité disparaît quand elle s'épuise :
+    candidats += [code for code in avant if code not in apres]
+    if len(candidats) == 1:
+        return candidats[0]
+    return None
+
+
+# ============================================================
 # 6. Le bot Discord et ses commandes
 # ============================================================
 
@@ -880,13 +960,59 @@ async def on_ready():
         for serveur in bot.guilds:
             bot.tree.copy_global_to(guild=serveur)
             await bot.tree.sync(guild=serveur)
+    # (Re)synchronise les compteurs d'invitations à chaque (re)connexion
+    for serveur in bot.guilds:
+        await synchroniser_cache_invitations(serveur)
     print(f"🤖 Connecté en tant que {bot.user}")
+
+
+@bot.event
+async def on_invite_create(invitation: discord.Invite):
+    if invitation.guild:
+        CACHE_INVITATIONS.setdefault(invitation.guild.id, {})[invitation.code] = invitation.uses or 0
+
+
+@bot.event
+async def on_invite_delete(invitation: discord.Invite):
+    if invitation.guild:
+        CACHE_INVITATIONS.get(invitation.guild.id, {}).pop(invitation.code, None)
 
 
 @bot.event
 async def on_member_join(membre: discord.Member):
     if membre.bot:
         return
+
+    # 0) Par quelle invitation ce membre arrive-t-il ?
+    code = await detecter_invitation(membre.guild)
+    infos_invitation = INVITATIONS.get(code) if code else None
+    role_invitation = None
+    if infos_invitation:
+        role_invitation = trouver_role(membre.guild, infos_invitation["role"])
+        if role_invitation:
+            try:
+                await membre.add_roles(
+                    role_invitation,
+                    reason=f"Invitation {code} ({infos_invitation['etiquette']})",
+                )
+            except discord.Forbidden:
+                role_invitation = None
+    if infos_invitation:
+        etiquette = infos_invitation["etiquette"]
+    elif code:
+        etiquette = "invitation non référencée"
+    else:
+        etiquette = "indéterminé"
+    try:
+        await asyncio.to_thread(
+            enregistrer_arrivee,
+            membre,
+            code or "indéterminé",
+            etiquette,
+            role_invitation.name if role_invitation else "",
+        )
+    except Exception as erreur:
+        print(f"[ERREUR Arrivées] {erreur}")
 
     # 1) Rôle d'arrivée immédiat (Curieux) : accès lecture seule aux zones publiques
     role_arrivee = trouver_role(membre.guild, CONFIG.get("ROLE_ARRIVEE", ""))
@@ -1101,6 +1227,51 @@ async def commande_synchro_roles(interaction: discord.Interaction):
 
 
 @bot.tree.command(
+    name="invitations",
+    description="Tableau de bord des invitations par influenceur (admin)",
+)
+@app_commands.default_permissions(administrator=True)
+async def commande_invitations(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    serveur = interaction.guild
+    if serveur is None:
+        await interaction.followup.send("Cette commande s'utilise sur le serveur.", ephemeral=True)
+        return
+    try:
+        actuelles = await serveur.invites()
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ Il me faut la permission **Gérer le serveur** pour lire les invitations.",
+            ephemeral=True,
+        )
+        return
+    par_code = {inv.code: inv for inv in actuelles}
+    embed = discord.Embed(title="📨 Invitations par influenceur", color=COULEUR)
+    if INVITATIONS:
+        lignes = []
+        for code, infos in INVITATIONS.items():
+            inv = par_code.get(code)
+            uses = str(inv.uses or 0) if inv else "⚠️ introuvable (supprimée ?)"
+            lignes.append(f"**{infos['etiquette']}** — `{code}` : {uses} utilisation(s) → rôle « {infos['role']} »")
+        embed.add_field(name="Suivies (onglet Invitations)", value="\n".join(lignes)[:1024], inline=False)
+    else:
+        embed.add_field(
+            name="Aucune invitation suivie",
+            value="Remplis l'onglet **Invitations** du Sheet (Code / Étiquette / Rôle) puis /recharger.",
+            inline=False,
+        )
+    non_suivies = [inv for inv in actuelles if inv.code not in INVITATIONS]
+    if non_suivies:
+        lignes = [
+            f"`{inv.code}` : {inv.uses or 0} utilisation(s) (créée par {inv.inviter or '?'})"
+            for inv in non_suivies
+        ]
+        embed.add_field(name="Non suivies", value="\n".join(lignes)[:1024], inline=False)
+    embed.set_footer(text="Historique détaillé : onglet « Arrivées » du Google Sheet.")
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(
     name="synchro-veterans",
     description="Donner le rôle « Vétéran » à tous les détenteurs d'un rôle « Vétéran lvl … » (admin)",
 )
@@ -1143,7 +1314,8 @@ async def commande_recharger(interaction: discord.Interaction):
     await interaction.followup.send(
         f"✅ **{len(QUESTIONS)} questions chargées :**\n{liste}\n"
         f"🎴 Boutons d'intérêt configurés : {len(INTERETS)}\n"
-        f"🧩 Rôles décrits dans l'onglet Rôles : {len(ROLES_CONFIG)}",
+        f"🧩 Rôles décrits dans l'onglet Rôles : {len(ROLES_CONFIG)}\n"
+        f"📨 Invitations suivies : {len(INVITATIONS)}",
         ephemeral=True,
     )
 
