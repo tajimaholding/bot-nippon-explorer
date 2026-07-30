@@ -1,5 +1,12 @@
 # Historique des versions de NEObot
 
+## v2.3 / LOT 4 — Gestion des rôles pilotée par le Sheet (juillet 2026)
+
+- Nouvel onglet **Rôles** du Google Sheet : Nom / Couleur (hex ou nom français) / Séparé / Mentionnable / Permissions (mots-clés français).
+- Nouvelle commande admin `/synchro-roles` : aperçu complet (créations, modifications détaillées, rôles hors de portée, orphelins, avertissements) puis application seulement après clic sur « Confirmer ».
+- Garde-fous : aucune suppression de rôle, jamais ; mots-clés `administrateur`, `gerer-serveur`, `gerer-webhooks` refusés ; rôles gérés par Discord ignorés ; cellule Permissions vide = permissions non touchées ; ligne `@everyone` acceptée (permissions uniquement).
+- Audit de chaque synchronisation dans `SALON_LOGS` ; premiers tests automatiques du projet (8 cas sur les analyseurs).
+
 ## v2.2 / LOT 3 — Annonces de créneaux de voyage (juillet 2026)
 
 - Nouvelle commande admin `/annonce` : publie un embed (titre, dates, prix, places, lien de réservation, description) dans le salon courant.

@@ -1,6 +1,6 @@
 # Commandes et interactions de NEObot
 
-*Dernière mise à jour : LOT 3 (état v2.2).*
+*Dernière mise à jour : LOT 4 (état v2.3).*
 
 ## Commandes visibles par tous
 
@@ -26,6 +26,29 @@ Publie dans le salon courant le menu des centres d'intérêt (embed + boutons, 2
 
 ### /annonce
 Publie une annonce de créneau de voyage dans le salon courant. Paramètres guidés : `titre`, `dates`, `prix`, `places`, `lien` (page de réservation), `description` (facultatif). L'annonce comporte le bouton ✋ Ça m'intéresse. Qui est intéressé par quoi : onglet **Annonces** du Google Sheet.
+
+### /synchro-roles
+Synchronise les rôles du serveur avec l'onglet **Rôles** du Google Sheet, en deux temps : un **aperçu** détaillé (créations, modifications champ par champ, rôles hors de portée, rôles du serveur absents du Sheet — jamais touchés, avertissements), puis application uniquement après clic sur **✅ Confirmer** (réservé à l'auteur de la commande, 5 minutes max).
+
+Garde-fous : le bot ne supprime jamais un rôle ; `administrateur`, `gerer-serveur` et `gerer-webhooks` sont refusés (à donner à la main) ; les rôles gérés par Discord (bots, boosts) sont ignorés ; une cellule Permissions vide signifie « ne pas toucher aux permissions de ce rôle » (le mot-clé `aucune` met explicitement zéro permission) ; la ligne `@everyone` est acceptée (permissions uniquement).
+
+**Onglet Rôles — colonnes :**
+
+| Colonne | Contenu |
+|---|---|
+| Nom | Nom exact du rôle (ou `@everyone`) |
+| Couleur | Code hex (`#E91E63`) ou nom : rouge, bleu, vert, jaune, orange, violet, rose, sakura, or, argent, turquoise, corail, marron, gris, noir, blanc. Vide = inchangée |
+| Séparé | `oui` = affiché séparément dans la liste des membres |
+| Mentionnable | `oui` / `non` |
+| Permissions | Mots-clés séparés par `;` (voir ci-dessous), `aucune`, ou vide |
+
+**Vocabulaire des permissions** (accents facultatifs) :
+
+- Courantes : `voir-salons`, `envoyer-messages`, `historique`, `reactions`, `liens`, `fichiers`, `emojis-externes`, `stickers-externes`, `creer-fils`, `ecrire-dans-fils`, `commandes-bots`, `changer-pseudo`, `inviter`
+- Vocal : `connecter`, `parler`, `video`, `couper-micro`, `rendre-sourd`, `deplacer-membres`
+- Modération : `gerer-messages`, `gerer-fils`, `gerer-pseudos`, `gerer-salons`, `gerer-roles`, `gerer-evenements`, `expulser`, `bannir`, `exclure-temporairement`, `voir-journal-audit`, `mentionner-tout-le-monde`
+
+⚠️ Ces permissions sont les permissions **générales** du rôle. Les accès salon par salon (qui voit quoi) restent gérés par les permissions de catégories dans Discord.
 
 ### /synchro-veterans
 Donne le rôle `Vétéran` à tout membre possédant un rôle commençant par « Vétéran lvl ». Compte-rendu : nombre d'ajouts et d'échecs.
@@ -131,7 +154,21 @@ Action : publier une annonce de test ; faire cliquer un second compte (ou un ami
 
 Résultat attendu : le compteur cumule correctement les deux membres ; après redéploiement, le bouton fonctionne toujours et le compteur reste juste (les données sont dans le Sheet, pas en mémoire).
 
-## TEST 12 — Non-régression générale après redéploiement
+## TEST 12 — Synchro rôles : aperçu et création
+
+Préconditions : onglet Rôles rempli avec au moins un rôle inexistant sur le serveur (ex. `test-synchro`, couleur `sakura`, permissions `aucune`).
+
+Action : `/synchro-roles` ; lire l'aperçu SANS confirmer ; vérifier qu'il liste bien la création attendue et les orphelins ; cliquer ❌ Annuler ; relancer ; cliquer ✅ Confirmer.
+
+Résultat attendu : l'annulation ne change rien ; après confirmation, le rôle `test-synchro` existe avec la bonne couleur ; résumé éphémère + trace dans SALON_LOGS. Nettoyer : supprimer le rôle de test à la main et sa ligne du Sheet.
+
+## TEST 13 — Synchro rôles : garde-fous
+
+Action : dans le Sheet, mettre `administrateur` dans les permissions d'un rôle, et une couleur invalide (`bleuu`) sur un autre ; `/synchro-roles`.
+
+Résultat attendu : l'aperçu affiche les avertissements (« refusé », « couleur inconnue ») ; les permissions du rôle fautif ne sont PAS modifiées même après confirmation ; aucun rôle n'est jamais supprimé. Remettre le Sheet en état.
+
+## TEST 14 — Non-régression générale après redéploiement
 
 Action : sur Render, Manual Deploy → Deploy latest commit ; attendre la fin ; cliquer le bouton 🌸 Commencer d'un message publié AVANT le redéploiement.
 

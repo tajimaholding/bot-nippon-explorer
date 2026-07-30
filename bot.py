@@ -1,7 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-NEObot v2.2 — Bot d'accueil de Nippon Explorer
+NEObot v2.3 — Bot d'accueil de Nippon Explorer
 --------------------------------------------
+Nouveauté v2.3 (LOT 4) :
+  • Gestion des rôles pilotée par le Google Sheet : onglet « Rôles »
+    (Nom / Couleur / Séparé / Mentionnable / Permissions en mots-clés
+    français), commande admin /synchro-roles avec APERÇU obligatoire puis
+    bouton de confirmation. Le bot ne supprime jamais de rôle et refuse
+    le mot-clé « administrateur ».
+
 Nouveauté v2.2 (LOT 3) :
   • Annonces de créneaux de voyage : commande admin /annonce (titre, dates,
     prix, places, lien) avec bouton persistant « ✋ Ça m'intéresse » à bascule,
@@ -26,6 +33,7 @@ Commandes disponibles sur Discord :
   /installer-bouton    -> publier le message d'accueil avec le bouton Commencer (admin)
   /installer-menu-interets -> publier le menu des centres d'intérêt (admin)
   /annonce             -> publier une annonce de créneau de voyage (admin)
+  /synchro-roles       -> synchroniser les rôles du serveur avec l'onglet Rôles (admin)
   /synchro-veterans    -> donner le rôle Vétéran aux détenteurs d'un rôle « Vétéran lvl » (admin)
   /recharger           -> recharger les questions depuis Google Sheets (admin)
   /export              -> recevoir toutes les réponses en fichier CSV (admin)
@@ -41,6 +49,7 @@ import json
 import os
 import threading
 import http.server
+import unicodedata
 from datetime import datetime, timezone
 
 import discord
@@ -83,6 +92,7 @@ PORTEES_GOOGLE = ["https://www.googleapis.com/auth/spreadsheets"]
 QUESTIONS = []
 CONFIG = {}
 INTERETS = []  # boutons du menu des centres d'intérêt : {"etiquette", "role", "emoji"}
+ROLES_CONFIG = []  # onglet « Rôles » : description des rôles à synchroniser
 
 
 def ouvrir_classeur():
@@ -94,7 +104,7 @@ def ouvrir_classeur():
 
 def charger_donnees():
     """Lit les onglets Questions / Config et prépare l'onglet Réponses."""
-    global QUESTIONS, CONFIG, INTERETS
+    global QUESTIONS, CONFIG, INTERETS, ROLES_CONFIG
     classeur = ouvrir_classeur()
 
     lignes = classeur.worksheet("Questions").get_all_records()
@@ -146,9 +156,27 @@ def charger_donnees():
     entetes = ["Date", "Pseudo", "ID Discord"] + [q["texte"] for q in questions]
     feuille_r.update(range_name="A1", values=[entetes])
 
+    # --- Onglet "Rôles" (facultatif) : rôles à synchroniser ---
+    roles_config = []
+    try:
+        for ligne in classeur.worksheet("Rôles").get_all_records():
+            nom = str(ligne.get("Nom", "")).strip()
+            if not nom:
+                continue
+            roles_config.append({
+                "nom": nom,
+                "couleur": str(ligne.get("Couleur", "")),
+                "separe": str(ligne.get("Séparé", "") or ligne.get("Separe", "")),
+                "mentionnable": str(ligne.get("Mentionnable", "")),
+                "permissions": str(ligne.get("Permissions", "")),
+            })
+    except gspread.WorksheetNotFound:
+        pass
+
     QUESTIONS = questions
     CONFIG = config
     INTERETS = interets
+    ROLES_CONFIG = roles_config
 
 
 def enregistrer_reponses(utilisateur, reponses):
@@ -562,6 +590,263 @@ class BoutonAnnonce(
 
 
 # ============================================================
+# 5quater. Synchronisation des rôles depuis l'onglet « Rôles »
+# ============================================================
+
+# Mots-clés français -> permissions Discord. Volontairement SANS
+# « administrateur », « gerer-serveur » ni « gerer-webhooks » : ces pouvoirs
+# se donnent à la main, jamais depuis un tableur.
+PERMS_FR = {
+    "voir-salons": "view_channel",
+    "envoyer-messages": "send_messages",
+    "historique": "read_message_history",
+    "reactions": "add_reactions",
+    "liens": "embed_links",
+    "fichiers": "attach_files",
+    "emojis-externes": "use_external_emojis",
+    "stickers-externes": "use_external_stickers",
+    "creer-fils": "create_public_threads",
+    "ecrire-dans-fils": "send_messages_in_threads",
+    "commandes-bots": "use_application_commands",
+    "changer-pseudo": "change_nickname",
+    "inviter": "create_instant_invite",
+    "connecter": "connect",
+    "parler": "speak",
+    "video": "stream",
+    "mentionner-tout-le-monde": "mention_everyone",
+    "gerer-messages": "manage_messages",
+    "gerer-fils": "manage_threads",
+    "gerer-pseudos": "manage_nicknames",
+    "gerer-salons": "manage_channels",
+    "gerer-roles": "manage_roles",
+    "gerer-evenements": "manage_events",
+    "expulser": "kick_members",
+    "bannir": "ban_members",
+    "exclure-temporairement": "moderate_members",
+    "voir-journal-audit": "view_audit_log",
+    "couper-micro": "mute_members",
+    "rendre-sourd": "deafen_members",
+    "deplacer-membres": "move_members",
+}
+
+PERMS_REFUSEES = {"administrateur", "gerer-serveur", "gerer-webhooks"}
+
+COULEURS_FR = {
+    "rouge": 0xD32F2F, "bleu": 0x1E88E5, "vert": 0x43A047, "jaune": 0xFDD835,
+    "orange": 0xFB8C00, "violet": 0x8E24AA, "rose": 0xEC407A, "sakura": 0xFFB7C5,
+    "or": 0xC9A227, "argent": 0xB0BEC5, "turquoise": 0x00ACC1, "corail": 0xFF7043,
+    "marron": 0x795548, "gris": 0x9E9E9E, "noir": 0x111111, "blanc": 0xFFFFFF,
+}
+
+
+def normaliser_mot(texte):
+    """minuscules, sans accents, sans espaces superflus."""
+    texte = unicodedata.normalize("NFD", str(texte).strip().lower())
+    return "".join(c for c in texte if unicodedata.category(c) != "Mn")
+
+
+def parser_couleur(texte):
+    brut = str(texte).strip()
+    if not brut:
+        return None, None
+    cle = normaliser_mot(brut)
+    if cle in COULEURS_FR:
+        return discord.Colour(COULEURS_FR[cle]), None
+    h = brut.lstrip("#")
+    if len(h) == 6 and all(c in "0123456789abcdefABCDEF" for c in h):
+        return discord.Colour(int(h, 16)), None
+    return None, f"couleur inconnue « {brut} »"
+
+
+def parser_oui_non(texte):
+    cle = normaliser_mot(texte)
+    if not cle:
+        return None
+    if cle in ("oui", "yes", "1", "true", "vrai", "x"):
+        return True
+    if cle in ("non", "no", "0", "false", "faux"):
+        return False
+    return None
+
+
+def parser_permissions(cellule):
+    """Cellule vide -> None (ne pas toucher). « aucune » -> zéro permission.
+    Retourne (Permissions ou None, liste de problèmes)."""
+    brut = str(cellule).strip()
+    if not brut:
+        return None, []
+    if normaliser_mot(brut) == "aucune":
+        return discord.Permissions.none(), []
+    problemes = []
+    perms = discord.Permissions.none()
+    for mot in brut.split(";"):
+        cle = normaliser_mot(mot)
+        if not cle:
+            continue
+        if cle in PERMS_REFUSEES:
+            problemes.append(f"« {mot.strip()} » refusé (à donner à la main)")
+            continue
+        attribut = PERMS_FR.get(cle)
+        if attribut is None:
+            problemes.append(f"mot-clé inconnu « {mot.strip()} »")
+            continue
+        setattr(perms, attribut, True)
+    return perms, problemes
+
+
+def construire_plan_roles(serveur):
+    """Compare l'onglet Rôles au serveur. Ne prévoit JAMAIS de suppression."""
+    plan, avertissements, orphelins, hors_portee = [], [], [], []
+    noms_sheet = set()
+    limite = serveur.me.top_role
+    for cfg in ROLES_CONFIG:
+        nom = cfg["nom"]
+        couleur, erreur_couleur = parser_couleur(cfg["couleur"])
+        if erreur_couleur:
+            avertissements.append(f"{nom} : {erreur_couleur} (couleur ignorée)")
+        separe = parser_oui_non(cfg["separe"])
+        mentionnable = parser_oui_non(cfg["mentionnable"])
+        perms, problemes = parser_permissions(cfg["permissions"])
+        if problemes:
+            avertissements.append(f"{nom} : " + " ; ".join(problemes) + " → permissions non touchées")
+            perms = None
+
+        if normaliser_mot(nom) in ("everyone", "@everyone"):
+            if perms is not None and serveur.default_role.permissions.value != perms.value:
+                plan.append({"type": "everyone", "nom": "@everyone", "perms": perms})
+            continue
+
+        noms_sheet.add(nom.lower())
+        role = trouver_role(serveur, nom)
+        if role is None:
+            plan.append({
+                "type": "creer", "nom": nom, "couleur": couleur,
+                "separe": bool(separe), "mentionnable": bool(mentionnable),
+                "perms": perms if perms is not None else discord.Permissions.none(),
+            })
+            continue
+        if role.managed:
+            avertissements.append(f"{nom} : rôle géré par Discord, ignoré")
+            continue
+        if role >= limite:
+            hors_portee.append(nom)
+            continue
+        params, changements = {}, []
+        if couleur is not None and role.colour.value != couleur.value:
+            params["colour"] = couleur
+            changements.append("couleur")
+        if separe is not None and role.hoist != separe:
+            params["hoist"] = separe
+            changements.append("affichage séparé")
+        if mentionnable is not None and role.mentionable != mentionnable:
+            params["mentionable"] = mentionnable
+            changements.append("mentionnable")
+        if perms is not None and role.permissions.value != perms.value:
+            params["permissions"] = perms
+            changements.append("permissions")
+        if params:
+            plan.append({
+                "type": "modifier", "nom": role.name, "role": role,
+                "params": params, "changements": changements,
+            })
+
+    for role in serveur.roles:
+        if role.is_default() or role.managed:
+            continue
+        if role.name.lower() not in noms_sheet:
+            orphelins.append(role.name)
+    return plan, avertissements, orphelins, hors_portee
+
+
+def resumer_liste(elements, maxi=950):
+    texte = ", ".join(elements)
+    return texte[:maxi] + ("…" if len(texte) > maxi else "")
+
+
+class VueConfirmationRoles(discord.ui.View):
+    """Aperçu -> confirmation explicite avant toute modification de rôle."""
+
+    def __init__(self, plan, serveur, auteur_id):
+        super().__init__(timeout=300)
+        self.plan = plan
+        self.serveur = serveur
+        self.auteur_id = auteur_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.auteur_id:
+            await interaction.response.send_message(
+                "Seule la personne ayant lancé /synchro-roles peut confirmer.", ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="✅ Confirmer et appliquer", style=discord.ButtonStyle.success)
+    async def confirmer(self, interaction: discord.Interaction, bouton: discord.ui.Button):
+        for enfant in self.children:
+            enfant.disabled = True
+        await interaction.response.edit_message(view=self)
+        faits, echecs = [], []
+        for action in self.plan:
+            try:
+                if action["type"] == "creer":
+                    await self.serveur.create_role(
+                        name=action["nom"],
+                        colour=action["couleur"] or discord.Colour.default(),
+                        hoist=action["separe"],
+                        mentionable=action["mentionnable"],
+                        permissions=action["perms"],
+                        reason="Synchro rôles (Google Sheet)",
+                    )
+                    faits.append(f"➕ {action['nom']}")
+                elif action["type"] == "modifier":
+                    await action["role"].edit(**action["params"], reason="Synchro rôles (Google Sheet)")
+                    faits.append(f"✏️ {action['nom']} ({', '.join(action['changements'])})")
+                else:  # @everyone
+                    await self.serveur.default_role.edit(
+                        permissions=action["perms"], reason="Synchro rôles (Google Sheet)"
+                    )
+                    faits.append("✏️ @everyone (permissions)")
+            except discord.Forbidden:
+                echecs.append(action["nom"])
+            except discord.HTTPException as erreur:
+                echecs.append(f"{action['nom']} (erreur {getattr(erreur, 'status', '?')})")
+        resume = f"🧩 Synchronisation terminée : {len(faits)} action(s) appliquée(s)."
+        if faits:
+            resume += "\n" + resumer_liste(faits, 1200)
+        if echecs:
+            resume += f"\n⚠️ Échecs : {resumer_liste(echecs, 400)}"
+        await interaction.followup.send(resume[:1900], ephemeral=True)
+        await journaliser_synchro_roles(self.serveur, interaction.user, faits, echecs)
+        self.stop()
+
+    @discord.ui.button(label="❌ Annuler", style=discord.ButtonStyle.secondary)
+    async def annuler(self, interaction: discord.Interaction, bouton: discord.ui.Button):
+        for enfant in self.children:
+            enfant.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send("Synchronisation annulée, rien n'a été modifié.", ephemeral=True)
+        self.stop()
+
+
+async def journaliser_synchro_roles(serveur, auteur, faits, echecs):
+    salon_id = CONFIG.get("SALON_LOGS", "").strip()
+    if not salon_id.isdigit():
+        return
+    salon = serveur.get_channel(int(salon_id))
+    if salon is None:
+        return
+    audit = discord.Embed(title="🧩 Synchronisation des rôles", color=COULEUR)
+    audit.add_field(name="Par", value=str(auteur), inline=False)
+    audit.add_field(name="Actions", value=resumer_liste(faits) or "aucune", inline=False)
+    if echecs:
+        audit.add_field(name="Échecs", value=resumer_liste(echecs), inline=False)
+    try:
+        await salon.send(embed=audit)
+    except discord.Forbidden:
+        pass
+
+
+# ============================================================
 # 6. Le bot Discord et ses commandes
 # ============================================================
 
@@ -725,6 +1010,9 @@ async def commande_annonce(
     lien: str,
     description: str = "",
 ):
+    # Répondre à Discord AVANT de publier : la limite des 3 secondes est
+    # facilement dépassée quand l'hébergeur gratuit est lent à réagir.
+    await interaction.response.defer(ephemeral=True)
     ident = int(datetime.now(timezone.utc).timestamp())
     embed = discord.Embed(
         title=f"🗾 {titre}"[:256],
@@ -738,8 +1026,78 @@ async def commande_annonce(
     embed.set_footer(text="Clique sur « Ça m'intéresse » pour être compté — sans engagement.")
     vue = discord.ui.View(timeout=None)
     vue.add_item(BoutonAnnonce(ident, 0))
-    await interaction.channel.send(embed=embed, view=vue)
-    await interaction.response.send_message("✅ Annonce publiée dans ce salon.", ephemeral=True)
+    try:
+        await interaction.channel.send(embed=embed, view=vue)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ Je n'ai pas la permission d'écrire dans ce salon. "
+            "Vérifie mes permissions ici (Envoyer des messages, Intégrer des liens) puis réessaie.",
+            ephemeral=True,
+        )
+        return
+    await interaction.followup.send("✅ Annonce publiée dans ce salon.", ephemeral=True)
+
+
+@bot.tree.command(
+    name="synchro-roles",
+    description="Synchroniser les rôles du serveur avec l'onglet Rôles du Sheet (admin)",
+)
+@app_commands.default_permissions(administrator=True)
+async def commande_synchro_roles(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    serveur = interaction.guild
+    if serveur is None:
+        await interaction.followup.send("Cette commande s'utilise sur le serveur.", ephemeral=True)
+        return
+    try:
+        await asyncio.to_thread(charger_donnees)  # relit le Sheet pour partir de la version à jour
+    except Exception as erreur:
+        await interaction.followup.send(f"❌ Erreur de lecture du Google Sheet : {erreur}", ephemeral=True)
+        return
+    if not ROLES_CONFIG:
+        await interaction.followup.send(
+            "❌ Onglet **Rôles** vide ou absent. Colonnes attendues : "
+            "Nom / Couleur / Séparé / Mentionnable / Permissions.",
+            ephemeral=True,
+        )
+        return
+    plan, avertissements, orphelins, hors_portee = construire_plan_roles(serveur)
+
+    apercu = discord.Embed(
+        title="🧩 Synchronisation des rôles — APERÇU",
+        description="Rien n'est encore appliqué. Vérifie puis confirme.",
+        color=COULEUR,
+    )
+    creations = [a["nom"] for a in plan if a["type"] == "creer"]
+    modifications = [f"{a['nom']} ({', '.join(a['changements'])})" for a in plan if a["type"] == "modifier"]
+    everyone = [a for a in plan if a["type"] == "everyone"]
+    if creations:
+        apercu.add_field(name=f"➕ À créer ({len(creations)})", value=resumer_liste(creations), inline=False)
+    if modifications:
+        apercu.add_field(name=f"✏️ À modifier ({len(modifications)})", value=resumer_liste(modifications), inline=False)
+    if everyone:
+        apercu.add_field(name="✏️ @everyone", value="permissions générales mises à jour", inline=False)
+    if hors_portee:
+        apercu.add_field(
+            name="🚫 Hors de portée (au-dessus du rôle NEObot)",
+            value=resumer_liste(hors_portee), inline=False,
+        )
+    if avertissements:
+        apercu.add_field(name="⚠️ Avertissements", value=resumer_liste(avertissements), inline=False)
+    if orphelins:
+        apercu.add_field(
+            name="👻 Sur le serveur mais absents du Sheet (jamais touchés)",
+            value=resumer_liste(orphelins), inline=False,
+        )
+    if not plan:
+        apercu.description = "✅ Tout est déjà conforme au Sheet, rien à appliquer."
+        await interaction.followup.send(embed=apercu, ephemeral=True)
+        return
+    await interaction.followup.send(
+        embed=apercu,
+        view=VueConfirmationRoles(plan, serveur, interaction.user.id),
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(
@@ -784,7 +1142,8 @@ async def commande_recharger(interaction: discord.Interaction):
     liste = "\n".join(f"{n}. {q['texte']} ({len(q['options'])} choix)" for n, q in enumerate(QUESTIONS, 1))
     await interaction.followup.send(
         f"✅ **{len(QUESTIONS)} questions chargées :**\n{liste}\n"
-        f"🎴 Boutons d'intérêt configurés : {len(INTERETS)}",
+        f"🎴 Boutons d'intérêt configurés : {len(INTERETS)}\n"
+        f"🧩 Rôles décrits dans l'onglet Rôles : {len(ROLES_CONFIG)}",
         ephemeral=True,
     )
 
