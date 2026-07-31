@@ -72,6 +72,7 @@ La séparation des responsabilités du cahier des charges (commands → services
 | Invitations suivies (code, influenceur, rôle) | Sheet « Invitations » | ✅ persistant |
 | Historique des arrivées (date, membre, code, influenceur, rôle) | Sheet « Arrivées » | ✅ persistant |
 | Compteurs d'invitations | Mémoire (`CACHE_INVITATIONS`) | ❌ perdu au redémarrage (resynchronisé à la connexion ; une arrivée pile pendant un redémarrage = source « indéterminé ») |
+| Membres en attente des règles | Mémoire (`EN_ATTENTE_REGLES`) | ❌ perdu au redémarrage (le membre reçoit quand même Curieux + questionnaire à l'acceptation ; seul le rôle Team d'invitation peut être perdu dans ce cas rare — rattrapable via l'onglet Arrivées) |
 | Profils : date, pseudo, ID Discord, réponses | Sheet « Réponses » | ✅ persistant |
 | Sessions de questionnaire en cours | Mémoire (`sessions_en_cours`) | ❌ perdu au redémarrage (acceptable : le membre reclique sur Commencer) |
 
