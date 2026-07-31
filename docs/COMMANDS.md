@@ -66,7 +66,7 @@ Envoie toutes les réponses en CSV (séparateur `;`, encodage compatible Excel).
 
 | Événement | Action |
 |---|---|
-| Arrivée d'un membre | Détection de l'invitation utilisée → rôle Team automatique + ligne dans l'onglet Arrivées, puis rôle `ROLE_ARRIVEE` (Curieux) + questionnaire en MP |
+| Arrivée d'un membre | Détection de l'invitation utilisée + ligne dans l'onglet Arrivées. Si le serveur exige d'accepter les règles (mode Communauté), l'accueil attend l'acceptation ; ensuite : rôle Team de l'invitation, rôle `ROLE_ARRIVEE` (Curieux), questionnaire en MP |
 | MP fermés à l'arrivée | Message d'orientation dans `SALON_FALLBACK` (si configuré) |
 | Fin de questionnaire | Rôles des réponses + `ROLE_FINAL`, retrait `ROLE_ARRIVEE`, enregistrement Sheet, résumé dans `SALON_LOGS` (si configuré) |
 | Réponse « Je débute sur Discord » | Le message de fin pointe vers le salon `SALON_GUIDE` |
