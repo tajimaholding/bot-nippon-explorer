@@ -917,24 +917,28 @@ async def synchroniser_cache_invitations(serveur):
 async def detecter_invitation(serveur):
     """Compare les compteurs avant/après une arrivée.
     Retourne le code utilisé, ou None si indéterminé (0 ou plusieurs candidats).
-    Le compteur Discord pouvant être en retard de quelques instants sur
-    l'événement d'arrivée, on réessaie une fois après 2,5 secondes."""
+    Le compteur Discord pouvant être en retard sur l'événement d'arrivée,
+    on relit à +0 s, +2,5 s et +10 s. Les lectures sont tracées dans les
+    logs (préfixe [Invitations]) pour faciliter le diagnostic."""
     avant = CACHE_INVITATIONS.get(serveur.id, {})
+    print(f"[Invitations] compteurs en mémoire avant l'arrivée : {avant}")
     apres = avant
-    for tentative in (1, 2):
+    for attente in (0, 2.5, 10):
+        if attente:
+            await asyncio.sleep(attente)
         try:
             actuelles = await serveur.invites()
         except discord.Forbidden:
+            print("[Invitations] lecture impossible : permission « Gérer le serveur » manquante")
             return None
         apres = {inv.code: inv.uses or 0 for inv in actuelles}
         candidats = [code for code, uses in apres.items() if uses > avant.get(code, 0)]
         # Une invitation à nombre d'usages limité disparaît quand elle s'épuise :
         candidats += [code for code in avant if code not in apres]
+        print(f"[Invitations] lecture +{attente}s : {apres} | candidats : {candidats}")
         if candidats:
             CACHE_INVITATIONS[serveur.id] = apres
             return candidats[0] if len(candidats) == 1 else None
-        if tentative == 1:
-            await asyncio.sleep(2.5)
     CACHE_INVITATIONS[serveur.id] = apres
     return None
 
