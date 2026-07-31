@@ -1,5 +1,11 @@
 # Historique des versions de NEObot
 
+## v2.6 / LOT 5ter — Journal des arrivées (juillet 2026)
+
+- Cause racine des compteurs à zéro identifiée : le rôle NEObot n'avait pas **« Gérer le serveur »** — sans elle, Discord renvoie la liste des invitations mais avec des compteurs vides, sans erreur. Permission ajoutée, compteurs fiables.
+- Retour de l'identification du lien utilisé à chaque arrivée (tâche de fond, lectures à 0/2,5/10 s), **journalisation seule** : ligne dans l'onglet **Arrivées** (date, pseudo, ID, code, étiquette). Aucune attribution de rôle par ce canal — les rôles Team restent attachés aux liens natifs Discord.
+- Onglet **Invitations** simplifié à deux colonnes : Code / Étiquette. Tout lien classique collé ici est suivi avec un libellé lisible (influenceur, événement promo…) ; un lien non listé est journalisé avec son code brut.
+
 ## v2.5 / LOT 5 révisé — Compteurs et fiche membre (juillet 2026)
 
 - **Abandon de la détection d'invitation par comparaison de compteurs** : les tests ont montré que Discord fournit au bot des compteurs durablement faux sur ce serveur (8 utilisations côté interface, 0 côté API pendant plus d'une heure). L'attribution des rôles Team se fait désormais par les **liens d'invitation natifs de Discord** (rôle attaché au lien à sa création) — plus simple et fiable.
