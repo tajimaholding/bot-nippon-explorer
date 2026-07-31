@@ -1,7 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-NEObot v2.5 — Bot d'accueil de Nippon Explorer
+NEObot v2.6 — Bot d'accueil de Nippon Explorer
 --------------------------------------------
+Nouveauté v2.6 (LOT 5ter) :
+  • Journal des arrivées : à chaque arrivée, NEObot identifie le lien
+    d'invitation utilisé (compteurs fiables depuis que le rôle NEObot a la
+    permission « Gérer le serveur ») et ajoute une ligne dans l'onglet
+    « Arrivées » du Sheet. Étiquettes lisibles via l'onglet « Invitations »
+    (colonnes Code / Étiquette). AUCUNE attribution de rôle par ce canal :
+    les rôles Team restent attachés aux liens d'invitation natifs Discord.
+
 Nouveautés v2.5 (LOT 5 révisé) :
   • Abandon de la détection d'invitation par compteurs (données non fiables
     fournies au bot sur ce serveur) : l'attribution des rôles Team se fait
@@ -105,6 +113,8 @@ QUESTIONS = []
 CONFIG = {}
 INTERETS = []  # boutons du menu des centres d'intérêt : {"etiquette", "role", "emoji"}
 ROLES_CONFIG = []  # onglet « Rôles » : description des rôles à synchroniser
+INVITATIONS = {}   # onglet « Invitations » : code -> étiquette lisible
+CACHE_INVITATIONS = {}  # serveur_id -> {code: utilisations} (resynchronisé à chaque connexion)
 
 
 def ouvrir_classeur():
@@ -124,7 +134,7 @@ def normaliser_code_invitation(texte):
 
 def charger_donnees():
     """Lit les onglets Questions / Config et prépare l'onglet Réponses."""
-    global QUESTIONS, CONFIG, INTERETS, ROLES_CONFIG
+    global QUESTIONS, CONFIG, INTERETS, ROLES_CONFIG, INVITATIONS
     classeur = ouvrir_classeur()
 
     lignes = classeur.worksheet("Questions").get_all_records()
@@ -193,10 +203,22 @@ def charger_donnees():
     except gspread.WorksheetNotFound:
         pass
 
+    # --- Onglet "Invitations" (facultatif) : étiquettes des liens suivis ---
+    invitations = {}
+    try:
+        for ligne in classeur.worksheet("Invitations").get_all_records():
+            code = normaliser_code_invitation(str(ligne.get("Code", "")))
+            etiquette = str(ligne.get("Étiquette", "") or ligne.get("Etiquette", "")).strip()
+            if code:
+                invitations[code] = etiquette or code
+    except gspread.WorksheetNotFound:
+        pass
+
     QUESTIONS = questions
     CONFIG = config
     INTERETS = interets
     ROLES_CONFIG = roles_config
+    INVITATIONS = invitations
 
 
 def enregistrer_reponses(utilisateur, reponses):
@@ -210,6 +232,24 @@ def enregistrer_reponses(utilisateur, reponses):
 def lire_toutes_les_reponses():
     classeur = ouvrir_classeur()
     return classeur.worksheet("Réponses").get_all_values()
+
+
+def enregistrer_arrivee(membre, code, etiquette):
+    """Ajoute une ligne dans l'onglet Arrivées (créé au besoin)."""
+    classeur = ouvrir_classeur()
+    try:
+        feuille = classeur.worksheet("Arrivées")
+    except gspread.WorksheetNotFound:
+        feuille = classeur.add_worksheet(title="Arrivées", rows=2000, cols=6)
+        feuille.update(
+            range_name="A1",
+            values=[["Date", "Pseudo", "ID Discord", "Code invitation", "Étiquette"]],
+        )
+    date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    feuille.append_row(
+        [date, str(membre), str(membre.id), code, etiquette],
+        value_input_option="USER_ENTERED",
+    )
 
 
 def basculer_interet_annonce(annonce_id, titre, utilisateur):
@@ -867,6 +907,52 @@ async def journaliser_synchro_roles(serveur, auteur, faits, echecs):
 
 
 # ============================================================
+# 5quinquies. Journal des arrivées (lien d'invitation utilisé)
+# ============================================================
+
+async def synchroniser_cache_invitations(serveur):
+    """Mémorise le compteur d'utilisations de chaque invitation du serveur."""
+    try:
+        invitations = await serveur.invites()
+    except discord.Forbidden:
+        print("⚠️ Permission « Gérer le serveur » requise pour lire les invitations.")
+        return
+    CACHE_INVITATIONS[serveur.id] = {inv.code: inv.uses or 0 for inv in invitations}
+
+
+async def resoudre_invitation(membre):
+    """Tâche de fond : identifie le lien utilisé (compteur qui a bougé) et
+    journalise l'arrivée dans l'onglet Arrivées. N'attribue AUCUN rôle —
+    les rôles Team sont attachés aux liens d'invitation natifs Discord."""
+    serveur = membre.guild
+    avant = dict(CACHE_INVITATIONS.get(serveur.id, {}))
+    code = None
+    derniere = avant
+    for attente in (0, 2.5, 10):
+        if attente:
+            await asyncio.sleep(attente)
+        try:
+            actuelles = await serveur.invites()
+        except discord.Forbidden:
+            print("[Invitations] permission « Gérer le serveur » manquante")
+            return
+        derniere = {inv.code: inv.uses or 0 for inv in actuelles}
+        candidats = [c for c, u in derniere.items() if u > avant.get(c, 0)]
+        # Une invitation à nombre d'usages limité disparaît quand elle s'épuise :
+        candidats += [c for c in avant if c not in derniere]
+        if candidats:
+            code = candidats[0] if len(candidats) == 1 else None
+            break
+    CACHE_INVITATIONS[serveur.id] = derniere
+    etiquette = INVITATIONS.get(code, "non référencée") if code else "indéterminé"
+    print(f"[Invitations] {membre} → {code or 'indéterminé'} ({etiquette})")
+    try:
+        await asyncio.to_thread(enregistrer_arrivee, membre, code or "indéterminé", etiquette)
+    except Exception as erreur:
+        print(f"[ERREUR Arrivées] {erreur}")
+
+
+# ============================================================
 # 6. Le bot Discord et ses commandes
 # ============================================================
 
@@ -900,7 +986,22 @@ async def on_ready():
         for serveur in bot.guilds:
             bot.tree.copy_global_to(guild=serveur)
             await bot.tree.sync(guild=serveur)
+    # (Re)synchronise les compteurs d'invitations à chaque (re)connexion
+    for serveur in bot.guilds:
+        await synchroniser_cache_invitations(serveur)
     print(f"🤖 Connecté en tant que {bot.user}")
+
+
+@bot.event
+async def on_invite_create(invitation: discord.Invite):
+    if invitation.guild:
+        CACHE_INVITATIONS.setdefault(invitation.guild.id, {})[invitation.code] = invitation.uses or 0
+
+
+@bot.event
+async def on_invite_delete(invitation: discord.Invite):
+    if invitation.guild:
+        CACHE_INVITATIONS.get(invitation.guild.id, {}).pop(invitation.code, None)
 
 
 EN_ATTENTE_REGLES = set()  # membres dont l'accueil attend l'acceptation des règles
@@ -939,6 +1040,9 @@ async def accueillir_membre(membre: discord.Member):
 async def on_member_join(membre: discord.Member):
     if membre.bot:
         return
+
+    # Journal des arrivées : identification du lien utilisé, en tâche de fond
+    asyncio.create_task(resoudre_invitation(membre))
 
     # Mode Communauté : tant que le membre n'a pas accepté les règles, Discord
     # bloque rôles et MP. On reprend dans on_member_update.
@@ -1273,7 +1377,8 @@ async def commande_recharger(interaction: discord.Interaction):
     await interaction.followup.send(
         f"✅ **{len(QUESTIONS)} questions chargées :**\n{liste}\n"
         f"🎴 Boutons d'intérêt configurés : {len(INTERETS)}\n"
-        f"🧩 Rôles décrits dans l'onglet Rôles : {len(ROLES_CONFIG)}",
+        f"🧩 Rôles décrits dans l'onglet Rôles : {len(ROLES_CONFIG)}\n"
+        f"📨 Liens d'invitation étiquetés : {len(INVITATIONS)}",
         ephemeral=True,
     )
 
