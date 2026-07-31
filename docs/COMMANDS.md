@@ -1,6 +1,6 @@
 # Commandes et interactions de NEObot
 
-*Dernière mise à jour : LOT 5 (état v2.4).*
+*Dernière mise à jour : LOT 5 révisé (état v2.5).*
 
 ## Commandes visibles par tous
 
@@ -53,8 +53,16 @@ Garde-fous : le bot ne supprime jamais un rôle ; `administrateur`, `gerer-serve
 ### /synchro-veterans
 Donne le rôle `Vétéran` à tout membre possédant un rôle commençant par « Vétéran lvl ». Compte-rendu : nombre d'ajouts et d'échecs.
 
-### /invitations
-Tableau de bord des invitations : pour chaque ligne de l'onglet **Invitations** du Sheet (Code / Étiquette / Rôle), affiche le nombre d'utilisations en direct et le rôle attribué ; liste aussi les invitations du serveur non suivies. L'historique détaillé arrivée par arrivée est dans l'onglet **Arrivées**.
+### /compter-role
+Affiche le nombre de membres ayant le rôle choisi (les bots sont exclus du compte et signalés à part). Le rôle se choisit dans un sélecteur avec recherche.
+
+### /compter-invitation
+Affiche le nombre d'utilisations d'un lien d'invitation (code ou lien complet accepté). ⚠️ Discord fournit parfois aux bots un compteur en retard : en cas de doute, la valeur de Paramètres du serveur → Invitations fait foi.
+
+### /membre
+Fiche d'un membre : compte et ID, date d'arrivée sur le serveur (avec ancienneté), date de création du compte Discord, liste complète des rôles, et statut « règles non acceptées » le cas échéant. Le membre se cherche par @ ou par pseudo affiché dans le sélecteur.
+
+**Attribution des rôles Team par invitation** : elle ne passe plus par NEObot. Attacher directement le rôle au lien d'invitation lors de sa création dans Discord (fonction native). NEObot mesure ensuite via `/compter-role` et `/compter-invitation`.
 
 ### /recharger
 Recharge questions et configuration depuis le Google Sheet. À exécuter après **chaque** modification du Sheet. Affiche la liste des questions chargées.
@@ -66,7 +74,7 @@ Envoie toutes les réponses en CSV (séparateur `;`, encodage compatible Excel).
 
 | Événement | Action |
 |---|---|
-| Arrivée d'un membre | Détection de l'invitation utilisée + ligne dans l'onglet Arrivées. Si le serveur exige d'accepter les règles (mode Communauté), l'accueil attend l'acceptation ; ensuite : rôle Team de l'invitation, rôle `ROLE_ARRIVEE` (Curieux), questionnaire en MP |
+| Arrivée d'un membre | Si le serveur exige d'accepter les règles (mode Communauté), l'accueil attend l'acceptation ; ensuite : rôle `ROLE_ARRIVEE` (Curieux) + questionnaire en MP. Le rôle Team vient du lien d'invitation natif Discord |
 | MP fermés à l'arrivée | Message d'orientation dans `SALON_FALLBACK` (si configuré) |
 | Fin de questionnaire | Rôles des réponses + `ROLE_FINAL`, retrait `ROLE_ARRIVEE`, enregistrement Sheet, résumé dans `SALON_LOGS` (si configuré) |
 | Réponse « Je débute sur Discord » | Le message de fin pointe vers le salon `SALON_GUIDE` |
@@ -171,19 +179,19 @@ Action : dans le Sheet, mettre `administrateur` dans les permissions d'un rôle,
 
 Résultat attendu : l'aperçu affiche les avertissements (« refusé », « couleur inconnue ») ; les permissions du rôle fautif ne sont PAS modifiées même après confirmation ; aucun rôle n'est jamais supprimé. Remettre le Sheet en état.
 
-## TEST 14 — Invitations : détection et attribution
+## TEST 14 — Compteurs et fiche membre
 
-Préconditions : une invitation permanente créée dans Discord ; son code collé dans l'onglet Invitations avec une étiquette et un rôle existant ; `/recharger` (la réponse affiche « 📨 Invitations suivies : N »).
+Action : `/compter-role` avec le rôle Visiteur ; `/compter-invitation` avec un code actif puis un code bidon ; `/membre` en cherchant un membre par pseudo affiché puis par @.
 
-Action : faire rejoindre un compte de test via CE lien d'invitation.
+Résultat attendu : compte correct (bots exclus) ; utilisations affichées pour le code actif, message d'erreur listant les invitations actives pour le code bidon ; fiche complète (date d'arrivée, ancienneté, rôles triés du plus haut au plus bas).
 
-Résultat attendu : le compte reçoit le rôle Team automatiquement (avant même le questionnaire) ; une ligne apparaît dans l'onglet Arrivées avec le bon code et la bonne étiquette ; `/invitations` affiche le compteur incrémenté.
+## TEST 15 — Rôle Team par lien natif
 
-## TEST 15 — Invitations : cas non suivi
+Préconditions : un lien d'invitation créé dans Discord avec un rôle Team attaché (fonction native).
 
-Action : faire rejoindre un compte de test via une invitation NON listée dans le Sheet.
+Action : faire rejoindre un compte de test via ce lien.
 
-Résultat attendu : aucune erreur ; ligne dans Arrivées avec « invitation non référencée » ; aucun rôle Team attribué ; le questionnaire se déroule normalement.
+Résultat attendu : le rôle Team est attribué par Discord ; l'accueil NEObot (Curieux + questionnaire) se déroule normalement ; `/membre` sur ce compte montre bien le rôle Team.
 
 ## TEST 16 — Non-régression générale après redéploiement
 
