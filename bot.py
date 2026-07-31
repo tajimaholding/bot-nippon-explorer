@@ -2,6 +2,12 @@
 """
 NEObot v2.4 — Bot d'accueil de Nippon Explorer
 --------------------------------------------
+Correctif v2.4.1 (LOT 5) — compatibilité mode Communauté :
+  • L'accueil (rôles + questionnaire) attend désormais que le membre ait
+    accepté les règles du serveur (état « en attente » de Discord).
+  • La détection d'invitation réessaie après 2,5 s si le compteur Discord
+    est en retard sur l'événement d'arrivée.
+
 Nouveauté v2.4 (LOT 5) :
   • Suivi des invitations par influenceur : onglet « Invitations » du Sheet
     (Code / Étiquette / Rôle), détection automatique de l'invitation utilisée
@@ -910,19 +916,26 @@ async def synchroniser_cache_invitations(serveur):
 
 async def detecter_invitation(serveur):
     """Compare les compteurs avant/après une arrivée.
-    Retourne le code utilisé, ou None si indéterminé (0 ou plusieurs candidats)."""
+    Retourne le code utilisé, ou None si indéterminé (0 ou plusieurs candidats).
+    Le compteur Discord pouvant être en retard de quelques instants sur
+    l'événement d'arrivée, on réessaie une fois après 2,5 secondes."""
     avant = CACHE_INVITATIONS.get(serveur.id, {})
-    try:
-        actuelles = await serveur.invites()
-    except discord.Forbidden:
-        return None
-    apres = {inv.code: inv.uses or 0 for inv in actuelles}
+    apres = avant
+    for tentative in (1, 2):
+        try:
+            actuelles = await serveur.invites()
+        except discord.Forbidden:
+            return None
+        apres = {inv.code: inv.uses or 0 for inv in actuelles}
+        candidats = [code for code, uses in apres.items() if uses > avant.get(code, 0)]
+        # Une invitation à nombre d'usages limité disparaît quand elle s'épuise :
+        candidats += [code for code in avant if code not in apres]
+        if candidats:
+            CACHE_INVITATIONS[serveur.id] = apres
+            return candidats[0] if len(candidats) == 1 else None
+        if tentative == 1:
+            await asyncio.sleep(2.5)
     CACHE_INVITATIONS[serveur.id] = apres
-    candidats = [code for code, uses in apres.items() if uses > avant.get(code, 0)]
-    # Une invitation à nombre d'usages limité disparaît quand elle s'épuise :
-    candidats += [code for code in avant if code not in apres]
-    if len(candidats) == 1:
-        return candidats[0]
     return None
 
 
@@ -978,43 +991,22 @@ async def on_invite_delete(invitation: discord.Invite):
         CACHE_INVITATIONS.get(invitation.guild.id, {}).pop(invitation.code, None)
 
 
-@bot.event
-async def on_member_join(membre: discord.Member):
-    if membre.bot:
-        return
+EN_ATTENTE_REGLES = {}  # id membre -> rôle d'invitation à donner une fois les règles acceptées
 
-    # 0) Par quelle invitation ce membre arrive-t-il ?
-    code = await detecter_invitation(membre.guild)
-    infos_invitation = INVITATIONS.get(code) if code else None
-    role_invitation = None
-    if infos_invitation:
-        role_invitation = trouver_role(membre.guild, infos_invitation["role"])
-        if role_invitation:
+
+async def accueillir_membre(membre: discord.Member, nom_role_invitation: str):
+    """Étapes d'accueil : rôle d'invitation, rôle Curieux, questionnaire en MP.
+    Appelé directement, ou après acceptation des règles (mode Communauté)."""
+    # 1) Rôle lié à l'invitation utilisée
+    if nom_role_invitation:
+        role = trouver_role(membre.guild, nom_role_invitation)
+        if role:
             try:
-                await membre.add_roles(
-                    role_invitation,
-                    reason=f"Invitation {code} ({infos_invitation['etiquette']})",
-                )
+                await membre.add_roles(role, reason="Invitation suivie (onglet Invitations)")
             except discord.Forbidden:
-                role_invitation = None
-    if infos_invitation:
-        etiquette = infos_invitation["etiquette"]
-    elif code:
-        etiquette = "invitation non référencée"
-    else:
-        etiquette = "indéterminé"
-    try:
-        await asyncio.to_thread(
-            enregistrer_arrivee,
-            membre,
-            code or "indéterminé",
-            etiquette,
-            role_invitation.name if role_invitation else "",
-        )
-    except Exception as erreur:
-        print(f"[ERREUR Arrivées] {erreur}")
+                print(f"⚠️ Impossible de donner {role.name} (rôle du bot trop bas ?)")
 
-    # 1) Rôle d'arrivée immédiat (Curieux) : accès lecture seule aux zones publiques
+    # 2) Rôle d'arrivée immédiat (Curieux) : accès lecture seule aux zones publiques
     role_arrivee = trouver_role(membre.guild, CONFIG.get("ROLE_ARRIVEE", ""))
     if role_arrivee:
         try:
@@ -1022,7 +1014,7 @@ async def on_member_join(membre: discord.Member):
         except discord.Forbidden:
             print(f"⚠️ Impossible de donner {role_arrivee.name} (rôle du bot trop bas ?)")
 
-    # 2) Questionnaire en MP
+    # 3) Questionnaire en MP
     try:
         await derouler_questionnaire(membre, membre.guild)
     except discord.Forbidden:
@@ -1038,6 +1030,51 @@ async def on_member_join(membre: discord.Member):
                     )
                 except discord.Forbidden:
                     pass
+
+
+@bot.event
+async def on_member_join(membre: discord.Member):
+    if membre.bot:
+        return
+
+    # 0) Par quelle invitation ce membre arrive-t-il ?
+    code = await detecter_invitation(membre.guild)
+    infos_invitation = INVITATIONS.get(code) if code else None
+    if infos_invitation:
+        etiquette = infos_invitation["etiquette"]
+        nom_role_invitation = infos_invitation["role"]
+    elif code:
+        etiquette = "invitation non référencée"
+        nom_role_invitation = ""
+    else:
+        etiquette = "indéterminé"
+        nom_role_invitation = ""
+    try:
+        await asyncio.to_thread(
+            enregistrer_arrivee,
+            membre,
+            code or "indéterminé",
+            etiquette,
+            nom_role_invitation,
+        )
+    except Exception as erreur:
+        print(f"[ERREUR Arrivées] {erreur}")
+
+    # Mode Communauté : tant que le membre n'a pas accepté les règles, Discord
+    # bloque rôles et MP. On mémorise et on reprend dans on_member_update.
+    if membre.pending:
+        EN_ATTENTE_REGLES[membre.id] = nom_role_invitation
+        return
+
+    await accueillir_membre(membre, nom_role_invitation)
+
+
+@bot.event
+async def on_member_update(avant: discord.Member, apres: discord.Member):
+    # Le membre vient d'accepter les règles du serveur -> lancer l'accueil
+    if avant.pending and not apres.pending:
+        nom_role = EN_ATTENTE_REGLES.pop(apres.id, "")
+        await accueillir_membre(apres, nom_role)
 
 
 @bot.tree.command(name="questionnaire", description="(Re)faire le questionnaire d'accueil")
