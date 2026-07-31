@@ -1,7 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-NEObot v2.6 — Bot d'accueil de Nippon Explorer
+NEObot v2.7 — Bot d'accueil de Nippon Explorer
 --------------------------------------------
+Nouveauté v2.7 (LOT SALONS) :
+  • Grille d'accès des salons pilotée par le Sheet : onglet « Zones »
+    (Catégorie / Rôle / Accès : aucun, voir, voir-sans-historique,
+    voir-reagir, ecrire), commande admin /synchro-salons avec APERÇU puis
+    confirmation. Applique les réglages au niveau des CATÉGORIES et
+    resynchronise leurs salons, sauf exceptions listées dans Config
+    (clé SALONS_EXCEPTIONS). Aucune création ni suppression, jamais.
+
 Nouveauté v2.6 (LOT 5ter) :
   • Journal des arrivées : à chaque arrivée, NEObot identifie le lien
     d'invitation utilisé (compteurs fiables depuis que le rôle NEObot a la
@@ -51,6 +59,7 @@ Commandes disponibles sur Discord :
   /installer-menu-interets -> publier le menu des centres d'intérêt (admin)
   /annonce             -> publier une annonce de créneau de voyage (admin)
   /synchro-roles       -> synchroniser les rôles du serveur avec l'onglet Rôles (admin)
+  /synchro-salons      -> appliquer la grille d'accès de l'onglet Zones (admin)
   /compter-role        -> nombre de membres ayant un rôle donné (admin)
   /compter-invitation  -> utilisations d'un lien d'invitation (admin)
   /membre              -> fiche d'un membre : arrivée, rôles (admin)
@@ -114,6 +123,7 @@ CONFIG = {}
 INTERETS = []  # boutons du menu des centres d'intérêt : {"etiquette", "role", "emoji"}
 ROLES_CONFIG = []  # onglet « Rôles » : description des rôles à synchroniser
 INVITATIONS = {}   # onglet « Invitations » : code -> étiquette lisible
+ZONES = []         # onglet « Zones » : grille d'accès des catégories
 CACHE_INVITATIONS = {}  # serveur_id -> {code: utilisations} (resynchronisé à chaque connexion)
 
 
@@ -134,7 +144,7 @@ def normaliser_code_invitation(texte):
 
 def charger_donnees():
     """Lit les onglets Questions / Config et prépare l'onglet Réponses."""
-    global QUESTIONS, CONFIG, INTERETS, ROLES_CONFIG, INVITATIONS
+    global QUESTIONS, CONFIG, INTERETS, ROLES_CONFIG, INVITATIONS, ZONES
     classeur = ouvrir_classeur()
 
     lignes = classeur.worksheet("Questions").get_all_records()
@@ -214,11 +224,24 @@ def charger_donnees():
     except gspread.WorksheetNotFound:
         pass
 
+    # --- Onglet "Zones" (facultatif) : grille d'accès des catégories ---
+    zones = []
+    try:
+        for ligne in classeur.worksheet("Zones").get_all_records():
+            categorie = str(ligne.get("Catégorie", "") or ligne.get("Categorie", "")).strip()
+            role = str(ligne.get("Rôle", "") or ligne.get("Role", "")).strip()
+            acces = str(ligne.get("Accès", "") or ligne.get("Acces", "")).strip()
+            if categorie and role and acces:
+                zones.append({"categorie": categorie, "role": role, "acces": acces})
+    except gspread.WorksheetNotFound:
+        pass
+
     QUESTIONS = questions
     CONFIG = config
     INTERETS = interets
     ROLES_CONFIG = roles_config
     INVITATIONS = invitations
+    ZONES = zones
 
 
 def enregistrer_reponses(utilisateur, reponses):
@@ -888,14 +911,14 @@ class VueConfirmationRoles(discord.ui.View):
         self.stop()
 
 
-async def journaliser_synchro_roles(serveur, auteur, faits, echecs):
+async def journaliser_synchro_roles(serveur, auteur, faits, echecs, titre="🧩 Synchronisation des rôles"):
     salon_id = CONFIG.get("SALON_LOGS", "").strip()
     if not salon_id.isdigit():
         return
     salon = serveur.get_channel(int(salon_id))
     if salon is None:
         return
-    audit = discord.Embed(title="🧩 Synchronisation des rôles", color=COULEUR)
+    audit = discord.Embed(title=titre, color=COULEUR)
     audit.add_field(name="Par", value=str(auteur), inline=False)
     audit.add_field(name="Actions", value=resumer_liste(faits) or "aucune", inline=False)
     if echecs:
@@ -904,6 +927,144 @@ async def journaliser_synchro_roles(serveur, auteur, faits, echecs):
         await salon.send(embed=audit)
     except discord.Forbidden:
         pass
+
+
+# ============================================================
+# 5sexies. Grille d'accès des salons (onglet « Zones »)
+# ============================================================
+
+# Chaque niveau d'accès se traduit en réglages posés sur la CATÉGORIE.
+# Les permissions non listées restent héritées (None).
+ACCES_SALONS = {
+    "aucun": dict(view_channel=False),
+    "voir": dict(view_channel=True, read_message_history=True,
+                 send_messages=False, add_reactions=False),
+    "voir-sans-historique": dict(view_channel=True, read_message_history=False,
+                                 send_messages=False, add_reactions=False),
+    "voir-reagir": dict(view_channel=True, read_message_history=True,
+                        add_reactions=True, send_messages=False),
+    "ecrire": dict(view_channel=True, read_message_history=True,
+                   add_reactions=True, send_messages=True,
+                   send_messages_in_threads=True),
+}
+
+
+def salon_est_exception(salon, exceptions):
+    nom = normaliser_mot(salon.name)
+    return any(exc and exc in nom for exc in exceptions)
+
+
+def construire_plan_salons(serveur):
+    """Compare l'onglet Zones aux catégories. Ne crée ni ne supprime rien."""
+    exceptions = {normaliser_mot(n) for n in CONFIG.get("SALONS_EXCEPTIONS", "").split(";") if n.strip()}
+    plan, avertissements = [], []
+    par_categorie = {}
+    for ligne in ZONES:
+        par_categorie.setdefault(ligne["categorie"], []).append(ligne)
+
+    for nom_cat, lignes in par_categorie.items():
+        categorie = discord.utils.find(
+            lambda c: c.name.lower() == nom_cat.lower(), serveur.categories
+        )
+        if categorie is None:
+            avertissements.append(f"catégorie « {nom_cat} » introuvable sur le serveur")
+            continue
+        reglages = []
+        for ligne in lignes:
+            acces = normaliser_mot(ligne["acces"])
+            if acces not in ACCES_SALONS:
+                avertissements.append(
+                    f"{nom_cat} / {ligne['role']} : accès inconnu « {ligne['acces']} »"
+                )
+                continue
+            if normaliser_mot(ligne["role"]) in ("everyone", "@everyone"):
+                cible = serveur.default_role
+            else:
+                cible = trouver_role(serveur, ligne["role"])
+            if cible is None:
+                avertissements.append(f"{nom_cat} : rôle « {ligne['role']} » introuvable")
+                continue
+            voulu = discord.PermissionOverwrite(**ACCES_SALONS[acces])
+            actuel = categorie.overwrites_for(cible)
+            if actuel.pair() == voulu.pair():
+                continue  # déjà conforme
+            reglages.append((cible, acces, voulu))
+        salons_sync = [
+            salon for salon in categorie.channels
+            if not salon_est_exception(salon, exceptions) and not salon.permissions_synced
+        ]
+        salons_ignores = [
+            salon.name for salon in categorie.channels
+            if salon_est_exception(salon, exceptions)
+        ]
+        if reglages or salons_sync:
+            plan.append({
+                "categorie": categorie,
+                "reglages": reglages,
+                "salons_sync": salons_sync,
+                "salons_ignores": salons_ignores,
+            })
+    return plan, avertissements
+
+
+class VueConfirmationSalons(discord.ui.View):
+    """Aperçu -> confirmation explicite avant toute modification d'accès."""
+
+    def __init__(self, plan, serveur, auteur_id):
+        super().__init__(timeout=300)
+        self.plan = plan
+        self.serveur = serveur
+        self.auteur_id = auteur_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.auteur_id:
+            await interaction.response.send_message(
+                "Seule la personne ayant lancé /synchro-salons peut confirmer.", ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="✅ Confirmer et appliquer", style=discord.ButtonStyle.success)
+    async def confirmer(self, interaction: discord.Interaction, bouton: discord.ui.Button):
+        for enfant in self.children:
+            enfant.disabled = True
+        await interaction.response.edit_message(view=self)
+        faits, echecs = [], []
+        for entree in self.plan:
+            categorie = entree["categorie"]
+            for cible, acces, voulu in entree["reglages"]:
+                try:
+                    await categorie.set_permissions(
+                        cible, overwrite=voulu, reason="Synchro salons (Google Sheet)"
+                    )
+                    faits.append(f"{categorie.name} · {cible.name} → {acces}")
+                except (discord.Forbidden, discord.HTTPException):
+                    echecs.append(f"{categorie.name} · {cible.name}")
+            for salon in entree["salons_sync"]:
+                try:
+                    await salon.edit(sync_permissions=True, reason="Synchro salons (Google Sheet)")
+                    faits.append(f"#{salon.name} resynchronisé sur sa catégorie")
+                except (discord.Forbidden, discord.HTTPException):
+                    echecs.append(f"#{salon.name}")
+        resume = f"🗂️ Synchronisation terminée : {len(faits)} action(s) appliquée(s)."
+        if faits:
+            resume += "\n" + resumer_liste(faits, 1200)
+        if echecs:
+            resume += f"\n⚠️ Échecs : {resumer_liste(echecs, 400)}"
+        resume += "\n🧪 Test final : vérifie avec un compte sans rôle qu'il ne voit que la Zone 0."
+        await interaction.followup.send(resume[:1900], ephemeral=True)
+        await journaliser_synchro_roles(
+            self.serveur, interaction.user, faits, echecs, titre="🗂️ Synchronisation des salons"
+        )
+        self.stop()
+
+    @discord.ui.button(label="❌ Annuler", style=discord.ButtonStyle.secondary)
+    async def annuler(self, interaction: discord.Interaction, bouton: discord.ui.Button):
+        for enfant in self.children:
+            enfant.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send("Synchronisation annulée, rien n'a été modifié.", ephemeral=True)
+        self.stop()
 
 
 # ============================================================
@@ -1335,6 +1496,73 @@ async def commande_membre(interaction: discord.Interaction, membre: discord.Memb
 
 
 @bot.tree.command(
+    name="synchro-salons",
+    description="Appliquer la grille d'accès de l'onglet Zones aux catégories (admin)",
+)
+@app_commands.default_permissions(administrator=True)
+async def commande_synchro_salons(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    serveur = interaction.guild
+    if serveur is None:
+        await interaction.followup.send("Cette commande s'utilise sur le serveur.", ephemeral=True)
+        return
+    try:
+        await asyncio.to_thread(charger_donnees)  # repart de la version à jour du Sheet
+    except Exception as erreur:
+        await interaction.followup.send(f"❌ Erreur de lecture du Google Sheet : {erreur}", ephemeral=True)
+        return
+    if not ZONES:
+        await interaction.followup.send(
+            "❌ Onglet **Zones** vide ou absent. Colonnes attendues : Catégorie / Rôle / Accès "
+            "(aucun, voir, voir-sans-historique, voir-reagir, ecrire).",
+            ephemeral=True,
+        )
+        return
+    plan, avertissements = construire_plan_salons(serveur)
+
+    apercu = discord.Embed(
+        title="🗂️ Synchronisation des salons — APERÇU",
+        description="Rien n'est encore appliqué. Vérifie puis confirme.",
+        color=COULEUR,
+    )
+    for entree in plan[:20]:
+        details = [f"{cible.name} → {acces}" for cible, acces, _ in entree["reglages"]]
+        if entree["salons_sync"]:
+            details.append(
+                "resynchronisation : " + ", ".join(f"#{s.name}" for s in entree["salons_sync"])
+            )
+        if entree["salons_ignores"]:
+            details.append("exceptions intactes : " + ", ".join(entree["salons_ignores"]))
+        apercu.add_field(
+            name=f"📁 {entree['categorie'].name}",
+            value=resumer_liste(details) or "—",
+            inline=False,
+        )
+    if avertissements:
+        apercu.add_field(name="⚠️ Avertissements", value=resumer_liste(avertissements), inline=False)
+    non_gerees = [
+        c.name for c in serveur.categories
+        if not any(e["categorie"].id == c.id for e in plan)
+        and c.name.lower() not in {z["categorie"].lower() for z in ZONES}
+    ]
+    if non_gerees:
+        apercu.add_field(
+            name="📂 Catégories absentes du Sheet (jamais touchées)",
+            value=resumer_liste(non_gerees),
+            inline=False,
+        )
+    if not plan:
+        apercu.description = "✅ Tout est déjà conforme à l'onglet Zones, rien à appliquer."
+        await interaction.followup.send(embed=apercu, ephemeral=True)
+        return
+    await interaction.followup.send(
+        embed=apercu,
+        view=VueConfirmationSalons(plan, serveur, interaction.user.id),
+        ephemeral=True,
+    )
+
+
+@bot.tree.command(
     name="synchro-veterans",
     description="Donner le rôle « Vétéran » à tous les détenteurs d'un rôle « Vétéran lvl … » (admin)",
 )
@@ -1378,7 +1606,8 @@ async def commande_recharger(interaction: discord.Interaction):
         f"✅ **{len(QUESTIONS)} questions chargées :**\n{liste}\n"
         f"🎴 Boutons d'intérêt configurés : {len(INTERETS)}\n"
         f"🧩 Rôles décrits dans l'onglet Rôles : {len(ROLES_CONFIG)}\n"
-        f"📨 Liens d'invitation étiquetés : {len(INVITATIONS)}",
+        f"📨 Liens d'invitation étiquetés : {len(INVITATIONS)}\n"
+        f"🗂️ Lignes de la grille d'accès (Zones) : {len(ZONES)}",
         ephemeral=True,
     )
 
