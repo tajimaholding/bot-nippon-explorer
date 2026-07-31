@@ -1,5 +1,13 @@
 # Historique des versions de NEObot
 
+## v2.7 / LOT SALONS — Grille d'accès pilotée par le Sheet (juillet 2026)
+
+- Nouvel onglet **Zones** : Catégorie / Rôle (ou `@everyone`) / Accès (`aucun`, `voir`, `voir-sans-historique`, `voir-reagir`, `ecrire`).
+- Nouvelle commande admin `/synchro-salons` : aperçu par catégorie (réglages à poser, salons à resynchroniser, exceptions intactes, avertissements, catégories non gérées) → confirmation → application au niveau **catégories** + resynchronisation de leurs salons.
+- Clé Config `SALONS_EXCEPTIONS` : liste de noms de salons (séparés par `;`, sans emoji, accents facultatifs) jamais touchés — salons d'intérêt 🔒, exceptions de la Zone 0, etc.
+- Garde-fous : aucune création ni suppression ; catégories absentes du Sheet jamais touchées ; réglages des rôles non listés conservés ; rappel du test « compte sans rôle » après chaque application.
+- 5 nouveaux tests automatiques (construction du plan, exceptions, resynchronisation, avertissements).
+
 ## v2.6 / LOT 5ter — Journal des arrivées (juillet 2026)
 
 - Cause racine des compteurs à zéro identifiée : le rôle NEObot n'avait pas **« Gérer le serveur »** — sans elle, Discord renvoie la liste des invitations mais avec des compteurs vides, sans erreur. Permission ajoutée, compteurs fiables.
