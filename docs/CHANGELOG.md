@@ -1,5 +1,12 @@
 # Historique des versions de NEObot
 
+## v2.4.1 / LOT 5 correctif — Compatibilité mode Communauté (juillet 2026)
+
+- L'accueil (rôle d'invitation, Curieux, questionnaire) attend désormais que le membre ait **accepté les règles** du serveur : Discord bloque rôles et MP tant qu'il est « en attente ». Reprise automatique dès l'acceptation.
+- La détection d'invitation **réessaie après 2,5 s** si le compteur Discord est en retard sur l'événement d'arrivée (cause des « indéterminé » observés en test).
+- Découverte documentée : le profil membre Discord (« Méthode d'adhésion ») affiche le premier lien jamais utilisé par le compte, même après expulsion/retour — ne pas s'y fier, l'onglet Arrivées fait foi.
+- 3 nouveaux tests automatiques (compteur en retard, aucune variation, détection immédiate).
+
 ## v2.4 / LOT 5 — Suivi des invitations par influenceur (juillet 2026)
 
 - Nouvel onglet **Invitations** du Sheet : Code (ou lien complet) / Étiquette (influenceur) / Rôle à attribuer.
