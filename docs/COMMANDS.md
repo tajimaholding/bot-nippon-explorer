@@ -1,6 +1,6 @@
 # Commandes et interactions de NEObot
 
-*Dernière mise à jour : LOT 5ter (état v2.6).*
+*Dernière mise à jour : LOT SALONS (état v2.7).*
 
 ## Commandes visibles par tous
 
@@ -49,6 +49,21 @@ Garde-fous : le bot ne supprime jamais un rôle ; `administrateur`, `gerer-serve
 - Modération : `gerer-messages`, `gerer-fils`, `gerer-pseudos`, `gerer-salons`, `gerer-roles`, `gerer-evenements`, `expulser`, `bannir`, `exclure-temporairement`, `voir-journal-audit`, `mentionner-tout-le-monde`
 
 ⚠️ Ces permissions sont les permissions **générales** du rôle. Les accès salon par salon (qui voit quoi) restent gérés par les permissions de catégories dans Discord.
+
+### /synchro-salons
+Applique la grille d'accès de l'onglet **Zones** du Sheet aux **catégories** du serveur, en deux temps : aperçu détaillé par catégorie, puis application après clic sur ✅ Confirmer. Les salons de chaque catégorie sont resynchronisés sur elle, **sauf** ceux listés dans la clé Config `SALONS_EXCEPTIONS` (noms séparés par `;`, sans emoji).
+
+**Onglet Zones — colonnes :** `Catégorie` (nom exact de la catégorie Discord) | `Rôle` (nom exact, ou `@everyone`) | `Accès` parmi :
+
+| Accès | Effet |
+|---|---|
+| `aucun` | Ne voit pas la catégorie |
+| `voir` | Voit + historique, sans écrire ni réagir |
+| `voir-sans-historique` | Voit le salon mais pas les anciens messages |
+| `voir-reagir` | Voit + historique + réactions, sans écrire |
+| `ecrire` | Tout : voir, historique, réagir, écrire (+ fils) |
+
+Garde-fous : aucune création/suppression ; catégories absentes du Sheet et rôles non listés jamais touchés. Après chaque application : **tester avec un compte sans rôle** (il ne doit voir que la Zone 0).
 
 ### /synchro-veterans
 Donne le rôle `Vétéran` à tout membre possédant un rôle commençant par « Vétéran lvl ». Compte-rendu : nombre d'ajouts et d'échecs.
@@ -193,7 +208,15 @@ Action : faire rejoindre un compte de test via ce lien.
 
 Résultat attendu : le rôle Team est attribué par Discord ; l'accueil NEObot (Curieux + questionnaire) se déroule normalement ; `/membre` sur ce compte montre bien le rôle Team ; une ligne apparaît dans l'onglet **Arrivées** avec le bon code et son étiquette (ou « non référencée » si le code n'est pas dans l'onglet Invitations).
 
-## TEST 16 — Non-régression générale après redéploiement
+## TEST 16 — Synchro salons : aperçu, application, sécurité
+
+Préconditions : onglet Zones rempli ; `SALONS_EXCEPTIONS` renseigné dans Config ; `/recharger`.
+
+Action : `/synchro-salons` ; lire l'aperçu SANS confirmer (vérifier catégories, exceptions intactes, avertissements) ; ❌ Annuler ; relancer ; ✅ Confirmer ; puis vérifier avec un compte sans rôle qu'il ne voit que la Zone 0, et avec un compte Visiteur qu'il peut écrire dans #général mais pas voir la Zone 7.
+
+Résultat attendu : annulation sans effet ; après confirmation, la grille est appliquée, les salons d'exception (🔒, présentations…) gardent leurs réglages propres ; trace dans SALON_LOGS.
+
+## TEST 17 — Non-régression générale après redéploiement
 
 Action : sur Render, Manual Deploy → Deploy latest commit ; attendre la fin ; cliquer le bouton 🌸 Commencer d'un message publié AVANT le redéploiement.
 
