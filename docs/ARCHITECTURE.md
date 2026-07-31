@@ -1,7 +1,7 @@
 # Architecture de NEObot
 
 *Document de référence — à mettre à jour à chaque lot qui modifie la structure.*
-*Dernière mise à jour : LOT 5 révisé (état v2.5).*
+*Dernière mise à jour : LOT 5ter (état v2.6).*
 
 ## 1. Vue d'ensemble
 
@@ -43,6 +43,7 @@ Le code tient dans un seul fichier `bot.py` (~556 lignes), découpé en 7 sectio
 | 5bis. Menu intérêts | Boutons à bascule persistants donnant/retirant les rôles d'accès thématiques | `src/commands/roles/` |
 | 5ter. Annonces | Bouton « Ça m'intéresse » persistant, compteur, écriture onglet Annonces | `src/commands/travel/` |
 | 5quater. Synchro rôles | Analyseurs (couleurs, permissions FR), plan de synchronisation, aperçu + confirmation | `src/services/roles/` |
+| 5quinquies. Journal des arrivées | Identification du lien utilisé (tâche de fond), écriture onglet Arrivées, sans attribution de rôle | `src/services/invites/` |
 | 6. Bot + commandes | Réception des commandes/événements Discord, appels aux sections 2-4, réponses | `src/commands/` + `src/events/` |
 | 7. Démarrage | Lancement serveur web + bot | point d'entrée |
 
@@ -68,9 +69,12 @@ La séparation des responsabilités du cahier des charges (commands → services
 | Boutons d'intérêt (étiquette, rôle, emoji) | Sheet « Intérêts » | ✅ persistant |
 | Intéressés par annonce (ID annonce, titre, pseudo, ID, date) | Sheet « Annonces » | ✅ persistant |
 | Description des rôles (nom, couleur, séparé, mentionnable, permissions) | Sheet « Rôles » | ✅ persistant |
+| Étiquettes des liens suivis (code, étiquette) | Sheet « Invitations » | ✅ persistant |
+| Journal des arrivées (date, membre, code, étiquette) | Sheet « Arrivées » | ✅ persistant |
+| Compteurs d'invitations | Mémoire (`CACHE_INVITATIONS`) | ❌ perdu au redémarrage (resynchronisé à la connexion ; une arrivée pile pendant un redémarrage = « indéterminé ») |
 | Membres en attente des règles | Mémoire (`EN_ATTENTE_REGLES`) | ❌ perdu au redémarrage (sans conséquence : l'accueil se déclenche à l'acceptation des règles via l'événement Discord) |
 
-Note (LOT 5 révisé) : le suivi des invitations par comparaison de compteurs a été retiré — l'API fournissait au bot des compteurs durablement faux sur ce serveur. L'attribution des rôles Team passe par les liens d'invitation natifs de Discord ; la mesure passe par `/compter-role` et `/compter-invitation`.
+Note (LOT 5ter) : l'identification du lien utilisé sert uniquement à la **journalisation** (onglet Arrivées). L'attribution des rôles Team passe par les liens d'invitation natifs de Discord. Prérequis vital : la permission « Gérer le serveur » sur le rôle NEObot — sans elle, Discord renvoie des compteurs vides **sans erreur** (piège découvert au LOT 5).
 | Profils : date, pseudo, ID Discord, réponses | Sheet « Réponses » | ✅ persistant |
 | Sessions de questionnaire en cours | Mémoire (`sessions_en_cours`) | ❌ perdu au redémarrage (acceptable : le membre reclique sur Commencer) |
 
@@ -100,4 +104,4 @@ Secrets exclusivement dans les variables d'environnement Render (`DISCORD_TOKEN`
 
 ## 9. Évolution prévue
 
-LOT 2 (fait, v2.1) : salon de redirection par boutons. LOT 3 (fait, v2.2) : `/annonce` avec mesure de la demande. LOT 4 (fait, v2.3) : synchro des rôles pilotée par le Sheet. LOT 5 (fait, v2.5 après révision) : rôles Team par liens natifs + `/compter-role`, `/compter-invitation`, `/membre`. Proposés : pré-attribution des accès selon le questionnaire ; clôture automatique des annonces complètes. LOT 6 : base de données Postgres + découpage en modules + généralisation des tests automatiques — ce lot mettra à jour le présent document.
+LOT 2 (fait, v2.1) : salon de redirection par boutons. LOT 3 (fait, v2.2) : `/annonce` avec mesure de la demande. LOT 4 (fait, v2.3) : synchro des rôles pilotée par le Sheet. LOT 5 (fait, v2.6 après révisions) : rôles Team par liens natifs, `/compter-role`, `/compter-invitation`, `/membre`, journal des arrivées par lien. Proposés : pré-attribution des accès selon le questionnaire ; clôture automatique des annonces complètes. LOT 6 : base de données Postgres + découpage en modules + généralisation des tests automatiques — ce lot mettra à jour le présent document.
