@@ -1,6 +1,6 @@
 # Commandes et interactions de NEObot
 
-*Dernière mise à jour : LOT 5 révisé (état v2.5).*
+*Dernière mise à jour : LOT 5ter (état v2.6).*
 
 ## Commandes visibles par tous
 
@@ -74,7 +74,7 @@ Envoie toutes les réponses en CSV (séparateur `;`, encodage compatible Excel).
 
 | Événement | Action |
 |---|---|
-| Arrivée d'un membre | Si le serveur exige d'accepter les règles (mode Communauté), l'accueil attend l'acceptation ; ensuite : rôle `ROLE_ARRIVEE` (Curieux) + questionnaire en MP. Le rôle Team vient du lien d'invitation natif Discord |
+| Arrivée d'un membre | Identification du lien d'invitation utilisé → ligne dans l'onglet **Arrivées** (date, membre, code, étiquette de l'onglet **Invitations** : Code / Étiquette). Si le serveur exige d'accepter les règles (mode Communauté), l'accueil attend l'acceptation ; ensuite : rôle `ROLE_ARRIVEE` (Curieux) + questionnaire en MP. Le rôle Team vient du lien d'invitation natif Discord |
 | MP fermés à l'arrivée | Message d'orientation dans `SALON_FALLBACK` (si configuré) |
 | Fin de questionnaire | Rôles des réponses + `ROLE_FINAL`, retrait `ROLE_ARRIVEE`, enregistrement Sheet, résumé dans `SALON_LOGS` (si configuré) |
 | Réponse « Je débute sur Discord » | Le message de fin pointe vers le salon `SALON_GUIDE` |
@@ -191,7 +191,7 @@ Préconditions : un lien d'invitation créé dans Discord avec un rôle Team att
 
 Action : faire rejoindre un compte de test via ce lien.
 
-Résultat attendu : le rôle Team est attribué par Discord ; l'accueil NEObot (Curieux + questionnaire) se déroule normalement ; `/membre` sur ce compte montre bien le rôle Team.
+Résultat attendu : le rôle Team est attribué par Discord ; l'accueil NEObot (Curieux + questionnaire) se déroule normalement ; `/membre` sur ce compte montre bien le rôle Team ; une ligne apparaît dans l'onglet **Arrivées** avec le bon code et son étiquette (ou « non référencée » si le code n'est pas dans l'onglet Invitations).
 
 ## TEST 16 — Non-régression générale après redéploiement
 
