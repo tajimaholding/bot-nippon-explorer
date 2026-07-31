@@ -1,5 +1,11 @@
 # Historique des versions de NEObot
 
+## v2.5 / LOT 5 révisé — Compteurs et fiche membre (juillet 2026)
+
+- **Abandon de la détection d'invitation par comparaison de compteurs** : les tests ont montré que Discord fournit au bot des compteurs durablement faux sur ce serveur (8 utilisations côté interface, 0 côté API pendant plus d'une heure). L'attribution des rôles Team se fait désormais par les **liens d'invitation natifs de Discord** (rôle attaché au lien à sa création) — plus simple et fiable.
+- Retirés : onglets Invitations/Arrivées, `/invitations`, cache des compteurs, tâches de détection. Conservé : l'accueil attend l'acceptation des règles (mode Communauté).
+- Nouvelles commandes admin : `/compter-role` (membres ayant un rôle donné, bots exclus), `/compter-invitation` (utilisations d'un lien, avec avertissement de fiabilité), `/membre` (fiche : date d'arrivée, ancienneté, rôles, statut règles — recherche par @ ou pseudo).
+
 ## v2.4.1 / LOT 5 correctif — Compatibilité mode Communauté (juillet 2026)
 
 - L'accueil (rôle d'invitation, Curieux, questionnaire) attend désormais que le membre ait **accepté les règles** du serveur : Discord bloque rôles et MP tant qu'il est « en attente ». Reprise automatique dès l'acceptation.
