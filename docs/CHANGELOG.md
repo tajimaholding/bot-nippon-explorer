@@ -1,5 +1,12 @@
 # Historique des versions de NEObot
 
+## v2.8 / LOT QUESTIONNAIRE — Questionnaire en salon (août 2026)
+
+- Le bouton 🌸 Commencer et `/questionnaire` (utilisé sur le serveur) déroulent le questionnaire **en messages éphémères dans le salon** : visible uniquement par le membre, sans MP, sans quitter le serveur — idéal débutants et MP fermés.
+- Le MP automatique à l'arrivée est conservé (flux historique), avec le bouton comme rattrapage universel.
+- Refactorisation : fin de questionnaire commune aux deux flux (rôles, enregistrement, journal, redirection guide).
+- Le message de fin liste les **salons désormais accessibles** avec liens cliquables et descriptions — nouvel onglet **Découverte** (Salon / Description), filtré automatiquement selon les accès réels du membre.
+
 ## v2.7 / LOT SALONS — Grille d'accès pilotée par le Sheet (juillet 2026)
 
 - Nouvel onglet **Zones** : Catégorie / Rôle (ou `@everyone`) / Accès (`aucun`, `voir`, `voir-sans-historique`, `voir-reagir`, `ecrire`).
