@@ -1,7 +1,7 @@
 # Architecture de NEObot
 
 *Document de référence — à mettre à jour à chaque lot qui modifie la structure.*
-*Dernière mise à jour : LOT SALONS (état v2.7).*
+*Dernière mise à jour : LOT QUESTIONNAIRE (état v2.8).*
 
 ## 1. Vue d'ensemble
 
@@ -55,7 +55,7 @@ La séparation des responsabilités du cahier des charges (commands → services
 **Onboarding (flux central) :**
 `on_member_join` → ajout rôle `ROLE_ARRIVEE` (Curieux) → `derouler_questionnaire` (MP, menus cliquables, 15 min max/question) → `attribuer_roles` (rôles des réponses + `ROLE_FINAL`, retrait de `ROLE_ARRIVEE`) → `enregistrer_reponses` (ligne dans l'onglet Réponses) → message de fin (+ lien salon guide si débutant Discord) → `journaliser` (salon `SALON_LOGS` si défini).
 
-**Voies de rattrapage :** bouton 🌸 Commencer (`#bienvenue`) et `/questionnaire` mènent au même `derouler_questionnaire`. MP fermés → message dans `SALON_FALLBACK`.
+**Voies de rattrapage :** bouton 🌸 Commencer (`#bienvenue`) et `/questionnaire` déroulent le questionnaire en **messages éphémères dans le salon** (`derouler_questionnaire_ephemere`) — aucun MP nécessaire. MP fermés à l'arrivée → message dans `SALON_FALLBACK`. Les deux flux partagent la même finalisation (`finaliser_questionnaire` : rôles, enregistrement, journal, guide).
 
 **Configuration :** modification du Google Sheet → `/recharger` → `charger_donnees()` recharge tout en mémoire (variables globales `QUESTIONS` et `CONFIG`).
 
