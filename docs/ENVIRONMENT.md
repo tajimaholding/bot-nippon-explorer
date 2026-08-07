@@ -34,7 +34,7 @@ Non secrète, modifiable à tout moment. Appliquer avec `/recharger`. Toutes les
 | `GUIDE_REPONSES` | Réponses déclencheuses, séparées par `;` | Si choisie(s), le message de fin pointe vers `SALON_GUIDE` |
 | `SALON_GUIDE` | ID de salon | Salon guide (#débuter-sur-discord) |
 | `SALON_LOGS` | ID de salon | Résumé de chaque questionnaire terminé |
-| `SALON_FALLBACK` | ID de salon | Message d'orientation si MP fermés à l'arrivée |
+| `SALON_FALLBACK` | ID de salon | Message public de bienvenue à chaque arrivée, mentionnant le nouveau et pointant vers le bouton 🌸 (vide = désactivé) |
 
 Obtenir un ID : Paramètres Discord → Avancés → Mode développeur, puis clic droit sur le salon → Copier l'identifiant.
 
@@ -43,5 +43,5 @@ Obtenir un ID : Paramètres Discord → Avancés → Mode développeur, puis cli
 | Réglage | Valeur requise |
 |---|---|
 | Privileged Gateway Intents | **SERVER MEMBERS INTENT activé** (sans lui : pas de détection des arrivées, pas de /synchro-veterans) |
-| Permissions du bot (invitation) | Manage Roles, Send Messages, Embed Links, Attach Files, Read Message History |
-| Position du rôle NEObot | Au-dessus de tous les rôles qu'il attribue ou retire |
+| Permissions du rôle NEObot | **Toutes les permissions SAUF Administrateur.** Règle Discord découverte au LOT 4 : pour modifier un rôle, le bot doit posséder toutes les permissions que ce rôle détient — même celles qui ne changent pas. Un jeu minimal provoque des échecs « silencieux » de /synchro-roles |
+| Position du rôle NEObot | Au-dessus de tous les rôles qu'il attribue, retire ou modifie |
