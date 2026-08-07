@@ -1,5 +1,11 @@
 # Historique des versions de NEObot
 
+## v2.8.1 / LOT QUESTIONNAIRE — Suppression du flux MP (août 2026)
+
+- Le questionnaire en messages privés est **entièrement supprimé** : l'onboarding se fait exclusivement dans le serveur (bouton 🌸 ou `/questionnaire`, messages éphémères).
+- À l'arrivée : rôle Curieux + message public facultatif de bienvenue mentionnant le nouveau et pointant vers le bouton (clé `SALON_FALLBACK`, sémantique mise à jour).
+- Le bloc « On t'accompagne » se désactive en vidant `SALON_GUIDE` dans Config (l'onglet Découverte le remplace avantageusement).
+
 ## v2.8 / LOT QUESTIONNAIRE — Questionnaire en salon (août 2026)
 
 - Le bouton 🌸 Commencer et `/questionnaire` (utilisé sur le serveur) déroulent le questionnaire **en messages éphémères dans le salon** : visible uniquement par le membre, sans MP, sans quitter le serveur — idéal débutants et MP fermés.
