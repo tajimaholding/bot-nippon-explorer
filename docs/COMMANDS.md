@@ -5,7 +5,7 @@
 ## Commandes visibles par tous
 
 ### /questionnaire
-(Re)lance le questionnaire d'accueil. Utilisé **sur le serveur** : déroulé en messages éphémères sur place (visible uniquement par le membre). Utilisé **en MP avec le bot** : flux MP classique. Les réponses précédentes restent dans le Sheet ; une nouvelle ligne est ajoutée.
+(Re)lance le questionnaire d'accueil, déroulé en messages éphémères sur place (visible uniquement par le membre). Aucun MP, jamais. Les réponses précédentes restent dans le Sheet ; une nouvelle ligne est ajoutée.
 
 ### Bouton 🌸 Commencer (salon #bienvenue)
 Lance le questionnaire en messages éphémères directement dans le salon — le membre ne quitte pas le serveur, aucun MP nécessaire. Bouton **persistant** : il survit aux redémarrages du bot. En cas d'inactivité (15 min sur une question), le questionnaire s'arrête silencieusement : recliquer pour recommencer.
@@ -89,7 +89,7 @@ Envoie toutes les réponses en CSV (séparateur `;`, encodage compatible Excel).
 
 | Événement | Action |
 |---|---|
-| Arrivée d'un membre | Identification du lien d'invitation utilisé → ligne dans l'onglet **Arrivées** (date, membre, code, étiquette de l'onglet **Invitations** : Code / Étiquette). Si le serveur exige d'accepter les règles (mode Communauté), l'accueil attend l'acceptation ; ensuite : rôle `ROLE_ARRIVEE` (Curieux) + questionnaire en MP. Le rôle Team vient du lien d'invitation natif Discord |
+| Arrivée d'un membre | Identification du lien d'invitation utilisé → ligne dans l'onglet **Arrivées**. Si le serveur exige d'accepter les règles (mode Communauté), l'accueil attend l'acceptation ; ensuite : rôle `ROLE_ARRIVEE` (Curieux) + message public facultatif pointant vers le bouton 🌸 (`SALON_FALLBACK`). Aucun MP. Le rôle Team vient du lien d'invitation natif Discord |
 | MP fermés à l'arrivée | Message d'orientation dans `SALON_FALLBACK` (si configuré) |
 | Fin de questionnaire | Rôles des réponses + `ROLE_FINAL`, retrait `ROLE_ARRIVEE`, enregistrement Sheet, résumé dans `SALON_LOGS` (si configuré). Le message de fin liste les salons de l'onglet **Découverte** (Salon / Description) auxquels le membre a réellement accès, avec liens cliquables |
 | Réponse « Je débute sur Discord » | Le message de fin pointe vers le salon `SALON_GUIDE` |
