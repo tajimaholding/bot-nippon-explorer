@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-NEObot v2.8 — Bot d'accueil de Nippon Explorer
+NEObot v2.8.1 — Bot d'accueil de Nippon Explorer
 --------------------------------------------
-Nouveauté v2.8 (LOT QUESTIONNAIRE) :
-  • Le bouton 🌸 Commencer et /questionnaire déroulent désormais le
-    questionnaire EN MESSAGES ÉPHÉMÈRES dans le salon (visible uniquement
-    par le membre) : plus besoin d'ouvrir ses MP, idéal pour les débutants.
-    Le MP automatique à l'arrivée est conservé.
+Nouveautés v2.8 / v2.8.1 (LOT QUESTIONNAIRE) :
+  • Le questionnaire se déroule EN MESSAGES ÉPHÉMÈRES dans le salon
+    (visible uniquement par le membre), via le bouton 🌸 Commencer ou
+    /questionnaire. Le flux MP est entièrement SUPPRIMÉ : tout
+    l'onboarding se fait sans quitter le serveur.
+  • À l'arrivée : rôle Curieux + message de bienvenue public facultatif
+    (clé Config SALON_FALLBACK) pointant vers le bouton 🌸.
   • À la fin du questionnaire, le message de fin liste les salons désormais
     accessibles au membre avec un lien cliquable et une courte description
     (onglet « Découverte » du Sheet : Salon / Description), filtrés selon
@@ -418,56 +420,6 @@ def doit_voir_le_guide(reponses):
         if question["texte"].strip().lower() == q_cible:
             return any(v.lower() in declencheurs for v in valeurs)
     return False
-
-
-async def derouler_questionnaire(utilisateur: discord.User, serveur: discord.Guild):
-    if utilisateur.id in sessions_en_cours:
-        return
-    if not QUESTIONS:
-        return
-    sessions_en_cours.add(utilisateur.id)
-    try:
-        mp = await utilisateur.create_dm()
-
-        bienvenue = discord.Embed(
-            title=f"🌸 Bienvenue sur {serveur.name} !",
-            description=(
-                "Pour t'accueillir au mieux, réponds à ces quelques questions.\n"
-                "Il suffit de **cliquer** dans les menus ci-dessous. C'est parti !"
-            ),
-            color=COULEUR,
-        )
-        await mp.send(embed=bienvenue)
-
-        reponses = []
-        total = len(QUESTIONS)
-        for numero, question in enumerate(QUESTIONS, start=1):
-            embed = discord.Embed(
-                title=f"Question {numero}/{total}",
-                description=f"**{question['texte']}**",
-                color=COULEUR,
-            )
-            if question["multiple"]:
-                embed.set_footer(text="Plusieurs réponses possibles ✔")
-            vue = VueQuestion(question, utilisateur.id)
-            message = await mp.send(embed=embed, view=vue)
-            await vue.wait()
-
-            if vue.valeurs is None:
-                await mp.send(
-                    "⏳ Le temps est écoulé. Reclique sur le bouton **Commencer** du salon d'accueil, "
-                    "ou tape **/questionnaire** sur le serveur pour recommencer quand tu veux !"
-                )
-                return
-
-            reponses.append(vue.valeurs)
-            embed.add_field(name="Ta réponse ✅", value=", ".join(vue.valeurs), inline=False)
-            await message.edit(embed=embed, view=None)
-
-        merci = await finaliser_questionnaire(utilisateur, serveur, reponses)
-        await mp.send(embed=merci)
-    finally:
-        sessions_en_cours.discard(utilisateur.id)
 
 
 async def finaliser_questionnaire(utilisateur, serveur, reponses):
@@ -1284,8 +1236,9 @@ EN_ATTENTE_REGLES = set()  # membres dont l'accueil attend l'acceptation des rè
 
 
 async def accueillir_membre(membre: discord.Member):
-    """Étapes d'accueil : rôle Curieux, questionnaire en MP.
-    Appelé directement, ou après acceptation des règles (mode Communauté)."""
+    """Étapes d'accueil à l'arrivée (ou après acceptation des règles) :
+    rôle Curieux + message de bienvenue public facultatif pointant vers le
+    bouton 🌸. Tout l'onboarding se déroule ensuite dans le serveur."""
     # 1) Rôle d'arrivée immédiat (Curieux) : accès lecture seule aux zones publiques
     role_arrivee = trouver_role(membre.guild, CONFIG.get("ROLE_ARRIVEE", ""))
     if role_arrivee:
@@ -1294,22 +1247,18 @@ async def accueillir_membre(membre: discord.Member):
         except discord.Forbidden:
             print(f"⚠️ Impossible de donner {role_arrivee.name} (rôle du bot trop bas ?)")
 
-    # 2) Questionnaire en MP
-    try:
-        await derouler_questionnaire(membre, membre.guild)
-    except discord.Forbidden:
-        salon_id = CONFIG.get("SALON_FALLBACK", "").strip()
-        if salon_id.isdigit():
-            salon = membre.guild.get_channel(int(salon_id))
-            if salon:
-                try:
-                    await salon.send(
-                        f"👋 Bienvenue {membre.mention} ! Je n'ai pas pu t'envoyer de message privé. "
-                        "Active tes MP (Paramètres du serveur > Confidentialité) puis clique sur le bouton "
-                        "**🌸 Commencer** du salon d'accueil."
-                    )
-                except discord.Forbidden:
-                    pass
+    # 2) Message de bienvenue public (facultatif : clé Config SALON_FALLBACK)
+    salon_id = CONFIG.get("SALON_FALLBACK", "").strip()
+    if salon_id.isdigit():
+        salon = membre.guild.get_channel(int(salon_id))
+        if salon:
+            try:
+                await salon.send(
+                    f"👋 Bienvenue {membre.mention} ! Pour débloquer le serveur, "
+                    "clique sur le bouton **🌸 Commencer** dans le salon d'accueil."
+                )
+            except discord.Forbidden:
+                pass
 
 
 @bot.event
@@ -1339,24 +1288,14 @@ async def on_member_update(avant: discord.Member, apres: discord.Member):
 
 @bot.tree.command(name="questionnaire", description="(Re)faire le questionnaire d'accueil")
 async def commande_questionnaire(interaction: discord.Interaction):
-    serveur = interaction.guild or (bot.guilds[0] if bot.guilds else None)
-    if serveur is None:
-        await interaction.response.send_message("Je ne suis sur aucun serveur pour le moment.", ephemeral=True)
-        return
-    if interaction.guild is not None:
-        # Sur le serveur : questionnaire en messages éphémères, sur place
-        await derouler_questionnaire_ephemere(interaction, serveur)
-        return
-    # En message privé avec le bot : flux MP classique
-    await interaction.response.send_message("📬 C'est parti, regarde juste en dessous !", ephemeral=True)
-    try:
-        await derouler_questionnaire(interaction.user, serveur)
-    except discord.Forbidden:
-        await interaction.followup.send(
-            "❌ Impossible de t'écrire en privé. Active tes MP : "
-            "clic droit sur le serveur > Paramètres de confidentialité > Messages privés.",
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "Cette commande s'utilise sur le serveur — ou clique sur le bouton "
+            "**🌸 Commencer** du salon d'accueil.",
             ephemeral=True,
         )
+        return
+    await derouler_questionnaire_ephemere(interaction, interaction.guild)
 
 
 @bot.tree.command(
