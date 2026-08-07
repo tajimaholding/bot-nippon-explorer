@@ -35,6 +35,8 @@ Non secrète, modifiable à tout moment. Appliquer avec `/recharger`. Toutes les
 | `SALON_GUIDE` | ID de salon | Salon guide (#débuter-sur-discord) |
 | `SALON_LOGS` | ID de salon | Résumé de chaque questionnaire terminé |
 | `SALON_FALLBACK` | ID de salon | Message public de bienvenue à chaque arrivée, mentionnant le nouveau et pointant vers le bouton 🌸 (vide = désactivé) |
+| `ACCUEIL_TITRE` | Texte | Titre du message d'accueil publié par /installer-bouton (vide = texte par défaut) |
+| `ACCUEIL_TEXTE` | Texte (sauts de ligne acceptés) | Corps du message d'accueil (vide = texte par défaut). Après modification : /recharger puis republier via /installer-bouton |
 
 Obtenir un ID : Paramètres Discord → Avancés → Mode développeur, puis clic droit sur le salon → Copier l'identifiant.
 
