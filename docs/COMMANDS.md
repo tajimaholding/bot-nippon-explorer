@@ -1,14 +1,14 @@
 # Commandes et interactions de NEObot
 
-*Dernière mise à jour : LOT SALONS (état v2.7).*
+*Dernière mise à jour : LOT QUESTIONNAIRE (état v2.8).*
 
 ## Commandes visibles par tous
 
 ### /questionnaire
-(Re)lance le questionnaire d'accueil en message privé. Utilisable par tout membre, à tout moment (les réponses précédentes restent dans le Sheet ; une nouvelle ligne est ajoutée).
+(Re)lance le questionnaire d'accueil. Utilisé **sur le serveur** : déroulé en messages éphémères sur place (visible uniquement par le membre). Utilisé **en MP avec le bot** : flux MP classique. Les réponses précédentes restent dans le Sheet ; une nouvelle ligne est ajoutée.
 
 ### Bouton 🌸 Commencer (salon #bienvenue)
-Même effet que `/questionnaire`. Bouton **persistant** : il survit aux redémarrages du bot.
+Lance le questionnaire en messages éphémères directement dans le salon — le membre ne quitte pas le serveur, aucun MP nécessaire. Bouton **persistant** : il survit aux redémarrages du bot. En cas d'inactivité (15 min sur une question), le questionnaire s'arrête silencieusement : recliquer pour recommencer.
 
 ### Bouton ✋ « Ça m'intéresse » (annonces de voyage)
 Bouton persistant à bascule sous chaque annonce : un clic inscrit le membre parmi les intéressés (compteur mis à jour sur l'annonce, ligne ajoutée dans l'onglet **Annonces** du Sheet), un second clic le désinscrit. Sans engagement.
@@ -91,7 +91,7 @@ Envoie toutes les réponses en CSV (séparateur `;`, encodage compatible Excel).
 |---|---|
 | Arrivée d'un membre | Identification du lien d'invitation utilisé → ligne dans l'onglet **Arrivées** (date, membre, code, étiquette de l'onglet **Invitations** : Code / Étiquette). Si le serveur exige d'accepter les règles (mode Communauté), l'accueil attend l'acceptation ; ensuite : rôle `ROLE_ARRIVEE` (Curieux) + questionnaire en MP. Le rôle Team vient du lien d'invitation natif Discord |
 | MP fermés à l'arrivée | Message d'orientation dans `SALON_FALLBACK` (si configuré) |
-| Fin de questionnaire | Rôles des réponses + `ROLE_FINAL`, retrait `ROLE_ARRIVEE`, enregistrement Sheet, résumé dans `SALON_LOGS` (si configuré) |
+| Fin de questionnaire | Rôles des réponses + `ROLE_FINAL`, retrait `ROLE_ARRIVEE`, enregistrement Sheet, résumé dans `SALON_LOGS` (si configuré). Le message de fin liste les salons de l'onglet **Découverte** (Salon / Description) auxquels le membre a réellement accès, avec liens cliquables |
 | Réponse « Je débute sur Discord » | Le message de fin pointe vers le salon `SALON_GUIDE` |
 
 ---
@@ -216,7 +216,13 @@ Action : `/synchro-salons` ; lire l'aperçu SANS confirmer (vérifier catégorie
 
 Résultat attendu : annulation sans effet ; après confirmation, la grille est appliquée, les salons d'exception (🔒, présentations…) gardent leurs réglages propres ; trace dans SALON_LOGS.
 
-## TEST 17 — Non-régression générale après redéploiement
+## TEST 17 — Questionnaire éphémère en salon
+
+Action : avec un compte de test, cliquer 🌸 Commencer dans #bienvenue ; répondre aux questions (elles apparaissent sur place, « Toi seul peux voir ») ; vérifier depuis un autre compte que rien n'est visible dans le salon ; à la fin, vérifier rôles (Visiteur, retrait Curieux), ligne dans Réponses, résumé dans SALON_LOGS. Tester aussi /questionnaire sur le serveur (même flux) et le double-clic sur le bouton pendant un questionnaire en cours (message « déjà en cours »).
+
+Résultat attendu : questionnaire complet sans MP, salon propre pour les autres, finalisation identique au flux MP.
+
+## TEST 18 — Non-régression générale après redéploiement
 
 Action : sur Render, Manual Deploy → Deploy latest commit ; attendre la fin ; cliquer le bouton 🌸 Commencer d'un message publié AVANT le redéploiement.
 
