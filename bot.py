@@ -1298,23 +1298,27 @@ async def commande_questionnaire(interaction: discord.Interaction):
     await derouler_questionnaire_ephemere(interaction, interaction.guild)
 
 
+ACCUEIL_TITRE_DEFAUT = "🌸 Bienvenue chez Nippon Explorer !"
+ACCUEIL_TEXTE_DEFAUT = (
+    "Ici, la communauté conçoit et vit des **voyages de groupe au Japon**.\n\n"
+    "**Comment ça marche ?**\n"
+    "1️⃣ Clique sur le bouton **Commencer** ci-dessous.\n"
+    "2️⃣ Réponds au petit questionnaire qui s'affiche **juste ici** — visible par toi seul(e) "
+    "(2 minutes, des clics, pas de texte à taper).\n"
+    "3️⃣ Le serveur s'ouvre à toi : salons de discussion, annonces de voyages, et plus encore."
+)
+
+
 @bot.tree.command(
     name="installer-bouton",
     description="Publier ici le message d'accueil avec le bouton Commencer (admin)",
 )
 @app_commands.default_permissions(administrator=True)
 async def commande_installer_bouton(interaction: discord.Interaction):
+    # Texte personnalisable via l'onglet Config : clés ACCUEIL_TITRE et ACCUEIL_TEXTE
     embed = discord.Embed(
-        title="🌸 Bienvenue chez Nippon Explorer !",
-        description=(
-            "Ici, la communauté conçoit et vit des **voyages de groupe au Japon**.\n\n"
-            "**Comment ça marche ?**\n"
-            "1️⃣ Clique sur le bouton **Commencer** ci-dessous.\n"
-            "2️⃣ Réponds au petit questionnaire que je t'envoie en message privé (2 minutes, des clics, pas de texte à taper).\n"
-            "3️⃣ Le serveur s'ouvre à toi : salons de discussion, annonces de voyages, et plus encore.\n\n"
-            "💬 *Si tu ne reçois pas de message privé, active tes MP : clic droit sur l'icône du serveur → "
-            "Paramètres de confidentialité → Messages privés, puis reclique sur le bouton.*"
-        ),
+        title=CONFIG.get("ACCUEIL_TITRE", "").strip() or ACCUEIL_TITRE_DEFAUT,
+        description=CONFIG.get("ACCUEIL_TEXTE", "").strip() or ACCUEIL_TEXTE_DEFAUT,
         color=COULEUR,
     )
     await interaction.channel.send(embed=embed, view=VueBoutonCommencer())
