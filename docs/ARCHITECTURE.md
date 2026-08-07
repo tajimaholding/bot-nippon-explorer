@@ -55,7 +55,7 @@ La séparation des responsabilités du cahier des charges (commands → services
 **Onboarding (flux central) :**
 `on_member_join` → ajout rôle `ROLE_ARRIVEE` (Curieux) → `derouler_questionnaire` (MP, menus cliquables, 15 min max/question) → `attribuer_roles` (rôles des réponses + `ROLE_FINAL`, retrait de `ROLE_ARRIVEE`) → `enregistrer_reponses` (ligne dans l'onglet Réponses) → message de fin (+ lien salon guide si débutant Discord) → `journaliser` (salon `SALON_LOGS` si défini).
 
-**Voies de rattrapage :** bouton 🌸 Commencer (`#bienvenue`) et `/questionnaire` déroulent le questionnaire en **messages éphémères dans le salon** (`derouler_questionnaire_ephemere`) — aucun MP nécessaire. MP fermés à l'arrivée → message dans `SALON_FALLBACK`. Les deux flux partagent la même finalisation (`finaliser_questionnaire` : rôles, enregistrement, journal, guide).
+**Flux unique (v2.8.1) :** le questionnaire se déroule exclusivement en **messages éphémères dans le salon** (`derouler_questionnaire_ephemere`), via le bouton 🌸 Commencer ou `/questionnaire` — le flux MP a été supprimé. À l'arrivée : rôle Curieux + message public facultatif (`SALON_FALLBACK`) pointant vers le bouton. Finalisation commune : `finaliser_questionnaire` (rôles, enregistrement, journal, salons de découverte).
 
 **Configuration :** modification du Google Sheet → `/recharger` → `charger_donnees()` recharge tout en mémoire (variables globales `QUESTIONS` et `CONFIG`).
 
